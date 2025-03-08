@@ -112,7 +112,7 @@ if st.button("処理を開始"):
 
                 # **デバッグ用：マッチング結果表示**
                 st.subheader("📌 一致した & 一致しなかったマッチング結果（上位5件）")
-                st.write(df_excel.head())
+                st.write(df_excel)
 
                 # **地図プロット（住所地番付き）**
                 st.subheader("📍 一致した筆ポリゴンの地図（住所地番付き）")
