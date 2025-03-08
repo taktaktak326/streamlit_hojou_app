@@ -15,12 +15,14 @@ if st.button("🔄 GeoJSONを結合"):
         st.warning("⚠️ ファイルをアップロードしてください！")
     else:
         gdfs = []
+        file_names = []
 
         for file in uploaded_files:
             try:
                 gdf = gpd.read_file(file)  # GeoJSONを読み込み
                 gdf["source_file"] = file.name  # 元のファイル名を記録
                 gdfs.append(gdf)
+                file_names.append(file.name.split(".")[0])  # 拡張子を除いたファイル名を取得
             except Exception as e:
                 st.error(f"ファイル {file.name} の読み込みに失敗しました: {e}")
 
@@ -45,6 +47,9 @@ if st.button("🔄 GeoJSONを結合"):
                 st.subheader("🗺️ 結合後のデータ（地図表示）")
                 st.map(merged_gdf[["lat", "lon"]].dropna())  # NaNを除去して表示
 
+            # **結合後のファイル名を生成**
+            merged_file_name = "_".join(file_names)[:100] + ".geojson"  # 長い場合は100文字に制限
+
             # **GeoJSONに変換**
             geojson_data = merged_gdf.to_json()
             geojson_bytes = BytesIO(geojson_data.encode())
@@ -53,6 +58,6 @@ if st.button("🔄 GeoJSONを結合"):
             st.download_button(
                 label="📥 結合したGeoJSON（重複削除済）をダウンロード",
                 data=geojson_bytes,
-                file_name="merged.geojson",
+                file_name=merged_file_name,
                 mime="application/geo+json"
             )
