@@ -139,7 +139,7 @@ if st.button("処理を開始"):
                 st.download_button(
                     label="📥 更新済みExcelをダウンロード",
                     data=output_buffer,
-                    file_name="updated_houjou_data.xlsx",
+                    file_name="圃場地番確認後ファイル.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 )
 
