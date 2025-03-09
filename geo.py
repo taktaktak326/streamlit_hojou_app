@@ -5,6 +5,8 @@ import re
 from io import BytesIO
 import folium
 from streamlit_folium import folium_static
+import time
+
 
 # 全角→半角変換用の関数
 def to_half_width(text):
@@ -52,22 +54,41 @@ header_row = st.number_input("カラム名がある行の番号（0から開始�
 
 # **処理開始**
 if st.button("処理を開始"):
+    progress_bar = st.progress(0)
+    status_text = st.empty()
+    total_steps = 7  # 各処理ステップのカウント
+    current_step = 0
+
     if uploaded_pori_files and uploaded_nouchi_files:
+        status_text.text("GeoJSONファイルの読み込み中...")
         gdf_pori_list = [gpd.read_file(file) for file in uploaded_pori_files]
         gdf_nouchi_list = [gpd.read_file(file) for file in uploaded_nouchi_files]
 
+        current_step += 1
+        progress_bar.progress(current_step / total_steps)
+        time.sleep(0.5)
+
+        status_text.text("ファイルを統合中...")
         df_pori = pd.concat(gdf_pori_list, ignore_index=True)
         df_nouchi = pd.concat(gdf_nouchi_list, ignore_index=True)
 
+        current_step += 1
+        progress_bar.progress(current_step / total_steps)
+        time.sleep(0.5)
+
         # **CRS（座標参照系）を統一**
+        status_text.text("座標系を統一中...")
         if df_pori.crs != df_nouchi.crs:
             df_nouchi = df_nouchi.to_crs(df_pori.crs)
+        current_step += 1
+        progress_bar.progress(current_step / total_steps)
+        time.sleep(0.5)
 
         # **空間結合**
+        status_text.text("空間結合を実行中...")
         result = gpd.sjoin(df_pori, df_nouchi, predicate='contains')
         result = result.drop_duplicates()
 
-        # **デバッグ用表示**
         st.subheader("📌 筆ポリゴンと農地ピンの結合結果（上位5件）")
         st.write(result.head())
 
@@ -81,7 +102,13 @@ if st.button("処理を開始"):
             st.write(existing_columns)
             st.stop()
 
+        current_step += 1
+        progress_bar.progress(current_step / total_steps)
+        time.sleep(0.5)
+
         # **3️⃣ Excelファイルの処理**
+        status_text.text("圃場代行シートの読み込み中...")
+        
         if uploaded_excel_file and sheet_name:
             try:
                 df_excel = pd.read_excel(uploaded_excel_file, sheet_name=sheet_name, header=header_row)
@@ -90,6 +117,11 @@ if st.button("処理を開始"):
                 st.subheader("📌 圃場登録代行シートのデータ（上位5件）")
                 st.write(df_excel.head())
 
+                current_step += 1
+                progress_bar.progress(current_step / total_steps)
+                time.sleep(0.5)
+                status_text.text("一致する地番の検索中...")
+                
                 # **一致検索**
                 def find_matching_geometry(address):
                     if pd.isna(address):
@@ -110,9 +142,14 @@ if st.button("処理を開始"):
                 df_excel["geometry"] = df_excel["住所地番"].apply(find_matching_geometry)
                 df_excel["geometry"] = df_excel["geometry"].fillna("一致なし")
 
-                # **デバッグ用：マッチング結果表示**
+                # **マッチング結果表示**
                 st.subheader("📌 一致した & 一致しなかったマッチング結果（上位5件）")
                 st.write(df_excel)
+
+                current_step += 1
+                progress_bar.progress(current_step / total_steps)
+                time.sleep(0.5)
+                status_text.text("マップの表示...")
 
                 # **地図プロット（住所地番付き）**
                 st.subheader("📍 一致した筆ポリゴンの地図（住所地番付き）")
@@ -129,7 +166,12 @@ if st.button("処理を開始"):
                     folium_static(m)
                 else:
                     st.warning("一致する筆ポリゴンが見つかりませんでした。")
-
+                
+                current_step += 1
+                progress_bar.progress(current_step / total_steps)
+                time.sleep(0.5)
+                status_text.text("処理完了")
+                
                 # **Excelファイルをダウンロード**
                 output_buffer = BytesIO()
                 with pd.ExcelWriter(output_buffer, engine="xlsxwriter") as writer:
@@ -139,7 +181,7 @@ if st.button("処理を開始"):
                 st.download_button(
                     label="📥 更新済みExcelをダウンロード",
                     data=output_buffer,
-                    file_name="圃場地番確認後ファイル.xlsx",
+                    file_name=f"{sheet_name}_圃場地番確認後ファイル.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 )
 
