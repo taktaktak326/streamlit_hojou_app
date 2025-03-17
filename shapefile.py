@@ -56,7 +56,7 @@ if uploaded_file:
     shapefile_path = os.path.join(output_dir, "houjou_data.shp")
 
     # Shapefile保存 (日本語データを保存するため Shift-JIS を使用)
-    gdf.to_file(shapefile_path, driver="ESRI Shapefile", encoding="Shift-JIS")
+    gdf.to_file(shapefile_path, driver="ESRI Shapefile", encoding="UTF-8")
 
     # ShapefileをZIP圧縮
     zip_filename = "shapefile_output.zip"
