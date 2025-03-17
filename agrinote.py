@@ -8,13 +8,32 @@ import os
 import zipfile
 import pandas as pd
 
-def create_map(data):
-    m = folium.Map(location=[35.3967687262, 139.1971242012], zoom_start=15)
-    
+def get_center_coordinates(data):
+    """JSONデータの圃場の中心座標を計算"""
+    latitudes = []
+    longitudes = []
+
     for field in data:
-        field_name = field.get("field_name")
-        if not field_name or field_name.strip() == "":
-            field_name = "（圃場名なし）"
+        region_latlngs = field.get("region_latlngs", [])
+        for point in region_latlngs:
+            latitudes.append(point["lat"])
+            longitudes.append(point["lng"])
+
+    if latitudes and longitudes:
+        center_lat = sum(latitudes) / len(latitudes)
+        center_lng = sum(longitudes) / len(longitudes)
+        return [center_lat, center_lng]
+    
+    # デフォルト位置 (データがない場合)
+    return [35.3967687262, 139.1971242012]
+
+def create_map(data):
+    """圃場データを地図にプロット"""
+    center_coords = get_center_coordinates(data)  # 圃場の中心を取得
+    m = folium.Map(location=center_coords, zoom_start=15)  # 中心位置を設定
+
+    for field in data:
+        field_name = field.get("field_name", "（圃場名なし）").strip()
         region_latlngs = field.get("region_latlngs", [])
         
         if region_latlngs:
@@ -32,6 +51,7 @@ def create_map(data):
     return m
 
 def create_shapefile(data):
+    """JSONデータをShapefileに変換してZIPファイルとして保存"""
     output_dir = "shapefile_from_agrinote"
     os.makedirs(output_dir, exist_ok=True)
     shapefile_path = os.path.join(output_dir, "houjou_data.shp")
@@ -40,9 +60,7 @@ def create_shapefile(data):
     polygons = []
     
     for field in data:
-        field_name = field.get("field_name")
-        if not field_name or field_name.strip() == "":
-            field_name = "（圃場名なし）"
+        field_name = field.get("field_name", "（圃場名なし）").strip()
         region_latlngs = field.get("region_latlngs", [])
         
         if region_latlngs:
@@ -63,7 +81,7 @@ def create_shapefile(data):
     return zip_filename
 
 # Streamlit UI
-st.title("アグリノートから圃場移行アプリ")
+st.title("圃場形状JSONからファイル作成アプリ")
 
 uploaded_file = st.file_uploader("JSONファイルをアップロード", type=["json"])
 json_input = st.text_area("またはJSONデータを直接入力")
@@ -76,19 +94,6 @@ elif json_input:
         data = json.loads(json_input)
     except json.JSONDecodeError:
         st.error("JSONの形式が正しくありません。修正してください。")
-else:
-    sample_data = [
-        {
-            "id": 1517291,
-            "field_name": "あ",
-            "region_latlngs": [
-                {"lat": 35.396732128, "lng": 139.197647329},
-                {"lat": 35.396702992, "lng": 139.197627988},
-                {"lat": 35.39668799, "lng": 139.197597037}
-            ]
-        }
-    ]
-    data = sample_data
 
 if data:
     st.subheader("マップ表示")
