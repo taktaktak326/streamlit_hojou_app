@@ -72,7 +72,7 @@ def create_shapefile(data):
     gdf = gpd.GeoDataFrame({"FieldName": field_names, "geometry": polygons}, geometry="geometry", crs="EPSG:4326")
     gdf.to_file(shapefile_path, driver="ESRI Shapefile", encoding="utf-8")
     
-    zip_filename = "shapefile_output.zip"
+    zip_filename = "shapefile.zip"
     with zipfile.ZipFile(zip_filename, 'w', zipfile.ZIP_DEFLATED) as zipf:
         for file in os.listdir(output_dir):
             file_path = os.path.join(output_dir, file)
