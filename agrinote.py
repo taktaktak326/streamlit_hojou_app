@@ -1,114 +1,136 @@
 import streamlit as st
+import time
 import requests
 import json
+import urllib.parse
 import shapefile
 import os
 import zipfile
 import tempfile
 import folium
+from folium import GeoJson
+from selenium import webdriver
+from selenium.webdriver.common.by import By
+from selenium.webdriver.common.keys import Keys
+from selenium.webdriver.chrome.service import Service
+from webdriver_manager.chrome import ChromeDriverManager
 from streamlit_folium import st_folium
 import math
 
 st.set_page_config(page_title="AgriNote Shapefile Exporter", layout="wide")
-st.title("AgriNote 圃場データ取得＆Shapefileエクスポーター（Seleniumなし版）")
+st.title("AgriNote 圃場データ取得＆Shapefileエクスポーター")
 
 if "fields" not in st.session_state:
     st.session_state.fields = None
 if "zip_paths" not in st.session_state:
     st.session_state.zip_paths = []
 
-st.markdown("""
-以下の手順で `an_api_token` を取得してください：
-1. ブラウザの開発者ツール（F12）を開く
-2. AgriNoteにログインし、`Network` タブで `an-api/v1/agri_fields` を探す
-3. リクエストヘッダー内の `cookie` をコピーし、以下に貼り付け
-""")
+EMAIL = st.text_input("メールアドレス")
+PASSWORD = st.text_input("パスワード", type="password")
 
-cookie_input = st.text_area("Cookieヘッダー（an_api_token を含む）")
-fetch_clicked = st.button("圃場データを取得")
+login_clicked = st.button("ログインしてデータ取得")
 
-if fetch_clicked:
+if login_clicked:
     try:
-        if "an_api_token=" not in cookie_input:
-            st.error("❌ an_api_token が Cookie に含まれていません")
-            st.stop()
+        with st.spinner("ログイン中..."):
+            options = webdriver.ChromeOptions()
+            options.add_argument("--headless")
+            options.add_argument("--no-sandbox")
+            options.add_argument("--disable-dev-shm-usage")
+            driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
 
-        # Cookieを辞書に変換
-        cookie_dict = {}
-        for pair in cookie_input.split(";"):
-            if "=" in pair:
-                k, v = pair.strip().split("=", 1)
-                cookie_dict[k] = v
+            driver.get("https://agri-note.jp/b/login/")
+            time.sleep(2)
 
-        if "tracking_user_uuid" not in cookie_dict or "an_login_status" not in cookie_dict:
-            st.error("❌ 必要なクッキー（tracking_user_uuid, an_login_status）が不足しています")
-            st.stop()
+            inputs = driver.find_elements(By.CLASS_NAME, "_1g2kt34")
+            if len(inputs) < 2:
+                st.error("❌ ログインフォームが見つかりません")
+                driver.quit()
+                st.stop()
 
-        csrf_token = json.loads(requests.utils.unquote(cookie_dict["an_login_status"]))["csrf"]
+            inputs[0].send_keys(EMAIL)
+            inputs[1].send_keys(PASSWORD)
+            inputs[1].send_keys(Keys.RETURN)
 
-        cookies = {
-            "an_api_token": cookie_dict["an_api_token"],
-            "an_login_status": cookie_dict["an_login_status"],
-            "tracking_user_uuid": cookie_dict["tracking_user_uuid"],
-        }
+            time.sleep(5)
 
-        headers = {
-            "x-an-csrf-token": csrf_token,
-            "x-user-uuid": cookie_dict['tracking_user_uuid'],
-            "x-agri-note-api-client": "v2.97.0",
-            "x-requested-with": "XMLHttpRequest",
-            "referer": "https://agri-note.jp/b/",
-            "user-agent": "Mozilla/5.0"
-        }
+            cookies_list = driver.get_cookies()
+            cookie_dict = {cookie['name']: cookie['value'] for cookie in cookies_list}
 
-        response = requests.get("https://agri-note.jp/an-api/v1/agri_fields", headers=headers, cookies=cookies)
+            required = ['an_api_token', 'an_login_status', 'tracking_user_uuid']
+            if not all(k in cookie_dict for k in required):
+                st.error("❌ 必要なクッキーが揃っていません")
+                st.write("取得されたクッキー:", cookie_dict)
+                driver.quit()
+                st.stop()
 
-        if response.status_code != 200:
-            st.error(f"API取得失敗: {response.status_code}")
-            st.stop()
+            csrf_token = json.loads(urllib.parse.unquote(cookie_dict['an_login_status']))["csrf"]
 
-        st.session_state.fields = response.json()
-        st.success(f"✅ {len(st.session_state.fields)}件の圃場データを取得しました")
+            cookies = {
+                "an_api_token": cookie_dict['an_api_token'],
+                "an_login_status": cookie_dict['an_login_status'],
+                "tracking_user_uuid": cookie_dict['tracking_user_uuid'],
+            }
 
-        center = st.session_state.fields[0]["center_latlng"]
-        fmap = folium.Map(location=[center["lat"], center["lng"]], zoom_start=15)
-        for field in st.session_state.fields:
-            coords = [(pt['lat'], pt['lng']) for pt in field['region_latlngs']]
-            folium.Polygon(
-                locations=coords,
-                popup=field['field_name'] or f"ID: {field['id']}",
-                tooltip=field['field_name'] or f"ID: {field['id']}",
-                color='red',
-                fill=True,
-                fill_opacity=0.5
-            ).add_to(fmap)
-        st_folium(fmap, width=700, height=500)
+            headers = {
+                "x-an-csrf-token": csrf_token,
+                "x-user-uuid": cookie_dict['tracking_user_uuid'],
+                "x-agri-note-api-client": "v2.97.0",
+                "x-requested-with": "XMLHttpRequest",
+                "referer": "https://agri-note.jp/b/",
+                "user-agent": "Mozilla/5.0"
+            }
 
-        temp_dir = tempfile.mkdtemp()
-        st.session_state.zip_paths = []
+            response = requests.get("https://agri-note.jp/an-api/v1/agri_fields", headers=headers, cookies=cookies)
+            driver.quit()
 
-        chunk_size = 300
-        chunks = [st.session_state.fields[i:i + chunk_size] for i in range(0, len(st.session_state.fields), chunk_size)]
+            if response.status_code != 200:
+                st.error(f"API取得失敗: {response.status_code}")
+                st.stop()
 
-        for idx, chunk in enumerate(chunks):
-            shp_path = os.path.join(temp_dir, f"fields_{idx+1}")
-            with shapefile.Writer(shp_path, shapeType=shapefile.POLYGON) as w:
-                w.field("id", "N")
-                w.field("name", "C")
-                w.field("area", "F", decimal=3)
+            st.session_state.fields = response.json()
+            st.success(f"✅ {len(st.session_state.fields)}件の圃場データを取得しました")
 
-                for field in chunk:
-                    coords = [(pt["lng"], pt["lat"]) for pt in field["region_latlngs"]]
-                    if coords[0] != coords[-1]:
-                        coords.append(coords[0])
-                    w.poly([coords])
-                    w.record(field["id"], field["field_name"], field["calculation_area"])
+            # 中心座標を最初の圃場の中心から取得
+            center = st.session_state.fields[0]["center_latlng"]
+            fmap = folium.Map(location=[center["lat"], center["lng"]], zoom_start=15)
+            for field in st.session_state.fields:
+                coords = [(pt['lat'], pt['lng']) for pt in field['region_latlngs']]
+                folium.Polygon(
+                    locations=coords,
+                    popup=field['field_name'] or f"ID: {field['id']}",
+                    tooltip=field['field_name'] or f"ID: {field['id']}",
+                    color='red',
+                    fill=True,
+                    fill_opacity=0.5
+                ).add_to(fmap)
+            st_folium(fmap, width=700, height=500)
 
-            zip_path = os.path.join(temp_dir, f"agnote_xarvio_shapefile_{idx+1}.zip")
-            with zipfile.ZipFile(zip_path, "w") as zipf:
-                for ext in ["shp", "shx", "dbf"]:
-                    zipf.write(f"{shp_path}.{ext}", arcname=f"fields_{idx+1}.{ext}")
-            st.session_state.zip_paths.append(zip_path)
+            temp_dir = tempfile.mkdtemp()
+            st.session_state.zip_paths = []
+
+            chunk_size = 300
+            chunks = [st.session_state.fields[i:i + chunk_size] for i in range(0, len(st.session_state.fields), chunk_size)]
+
+            for idx, chunk in enumerate(chunks):
+                shp_path = os.path.join(temp_dir, f"fields_{idx+1}")
+                with shapefile.Writer(shp_path, shapeType=shapefile.POLYGON) as w:
+                    w.field("id", "N")
+                    w.field("name", "C")
+                    w.field("area", "F", decimal=3)
+
+                    for field in chunk:
+                        coords = [(pt["lng"], pt["lat"]) for pt in field["region_latlngs"]]
+                        if coords[0] != coords[-1]:
+                            coords.append(coords[0])
+                        w.poly([coords])
+                        w.record(field["id"], field["field_name"], field["calculation_area"])
+
+                zip_path = os.path.join(temp_dir, f"agnote_xarvio_shapefile_{idx+1}.zip")
+                with zipfile.ZipFile(zip_path, "w") as zipf:
+                    for ext in ["shp", "shx", "dbf"]:
+                        zipf.write(f"{shp_path}.{ext}", arcname=f"fields_{idx+1}.{ext}")
+                st.session_state.zip_paths.append(zip_path)
 
     except Exception as e:
         st.error(f"予期せぬエラーが発生しました: {e}")
