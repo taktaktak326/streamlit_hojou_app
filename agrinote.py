@@ -15,9 +15,10 @@ from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
 from webdriver_manager.chrome import ChromeDriverManager
 from pyvirtualdisplay import Display
+import shutil
 
 st.set_page_config(page_title="AgriNote Shapefile Exporter", layout="wide")
-st.title("AgriNote 圃場データ取得＆Shapefileエクスポーター（Selenium対応版）２")
+st.title("AgriNote 圃場データ取得＆Shapefileエクスポーター（Selenium対応版）3")
 
 if "fields" not in st.session_state:
     st.session_state.fields = None
@@ -27,6 +28,7 @@ if "zip_paths" not in st.session_state:
 EMAIL = st.text_input("メールアドレス")
 PASSWORD = st.text_input("パスワード", type="password")
 login_clicked = st.button("ログインしてデータ取得")
+st.write(\"Xvfb のパス:\", shutil.which(\"Xvfb\"))
 
 if login_clicked:
     try:
