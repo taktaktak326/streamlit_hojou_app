@@ -32,7 +32,7 @@ if login_clicked:
     try:
         with st.spinner("ログイン中..."):
             # 仮想ディスプレイの開始（クラウド用）
-            display = Display(visible=0, size=(1024, 768), use_xauth=False)
+            display = Display(visible=0, size=(1024, 768), use_xauth=False, backend='xvfb')
             display.start()
 
             chrome_options = Options()
