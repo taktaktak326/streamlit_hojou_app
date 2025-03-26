@@ -18,7 +18,7 @@ from streamlit_folium import st_folium
 import math
 
 st.set_page_config(page_title="AgriNote Shapefile Exporter", layout="wide")
-st.title("AgriNote 圃場データ取得＆Shapefileエクスポーター")
+st.title("AgriNote 圃場データ取得＆Shapefileエクスポーター２")
 
 if "fields" not in st.session_state:
     st.session_state.fields = None
