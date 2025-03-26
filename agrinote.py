@@ -28,7 +28,7 @@ if "zip_paths" not in st.session_state:
 EMAIL = st.text_input("メールアドレス")
 PASSWORD = st.text_input("パスワード", type="password")
 login_clicked = st.button("ログインしてデータ取得")
-st.write(\"Xvfb のパス:\", shutil.which(\"Xvfb\"))
+st.write("Xvfb のパス:", shutil.which("Xvfb"))
 
 if login_clicked:
     try:
