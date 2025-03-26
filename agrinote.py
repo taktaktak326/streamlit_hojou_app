@@ -87,14 +87,14 @@ if st.button("🔐 ログイン & データ取得"):
                 st.stop()
 
             st.session_state.fields = response.json()
-            st.success(f"✅ {len(st.session_state.fields)} 件の土地データを取得しました")
+            st.success(f"✅ {len(st.session_state.fields)} 件の圃場データを取得しました")
 
     except Exception as e:
         st.error(f"予期せぬエラー: {e}")
 
 # === マップ表示 ===
 if st.session_state.fields:
-    st.subheader("🖼️ 土地マップ")
+    st.subheader("🖼️ 圃場マップ")
     center = st.session_state.fields[0]["center_latlng"]
     fmap = folium.Map(location=[center["lat"], center["lng"]], zoom_start=15)
 
@@ -114,12 +114,15 @@ if st.session_state.fields:
 
     # === 表形式でフィルター・ソート・選択 ===
     st.subheader("📋 圃場一覧と選択")
+
+    st.checkbox("すべて選択", value=True, key="select_all")
+
     df = pd.DataFrame([
         {
             "ID": f["id"],
             "圃場名": f["field_name"] or f"ID: {f['id']}",
             "面積 (a)": round(f.get("calculation_area", 0), 2),
-            "選択": True
+            "選択": st.session_state.select_all
         } for f in st.session_state.fields
     ])
 
@@ -150,7 +153,7 @@ if st.session_state.fields:
                 coords = [(pt["lng"], pt["lat"]) for pt in f["region_latlngs"]]
                 if coords[0] != coords[-1]:
                     coords.append(coords[0])
-                field_names.append(f["field_name"] or f"ID: {f['id']}")
+                field_names.append(f["field_name"] or f"圃場名なし ID: {f['id']}")
                 polygons.append(Polygon(coords))
 
             gdf = gpd.GeoDataFrame({
@@ -177,4 +180,4 @@ if st.session_state.fields:
                     mime="application/zip"
                 )
     else:
-        st.info("🔍 土地を選択してください")
+        st.info("🔍 圃場を選択してください")
