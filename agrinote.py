@@ -23,8 +23,6 @@ st.title("AgriNote 圃場情報取得 & Shapefile エクスポート")
 
 if "fields" not in st.session_state:
     st.session_state.fields = None
-if "selected_labels" not in st.session_state:
-    st.session_state.selected_labels = set()
 
 col1, col2 = st.columns([3, 3])
 with col1:
@@ -92,7 +90,6 @@ if st.button("🔐 ログイン & データ取得"):
                 st.stop()
 
             st.session_state.fields = response.json()
-            st.session_state.selected_labels = set()
             st.success(f"✅ {len(st.session_state.fields)} 件の土地データを取得しました")
 
     except Exception as e:
@@ -118,30 +115,30 @@ if st.session_state.fields:
 
     st_folium(fmap, use_container_width=True)
 
-    # === フィルタ & 並び替え ===
+    # === 表形式でフィルター・ソート・選択 ===
     st.subheader("📋 圃場一覧と選択")
-    search_text = st.text_input("🔍 圃場名で検索")
 
-    field_map = {}
-    rows = []
-    for f in st.session_state.fields:
-        name = f['field_name'] or f"ID: {f['id']}"
-        area = round(f.get("calculation_area", 0), 2)
-        display_name = f"{name} ({area}a)"
-        if search_text.lower() in display_name.lower():
-            rows.append({"ID": f["id"], "圃場名": name, "面積 (a)": area, "Label": display_name})
-            field_map[f["id"]] = f
+    st.checkbox("すべて選択", value=True, key="select_all")
 
-    df = pd.DataFrame(rows).sort_values("圃場名")
+    df = pd.DataFrame([
+        {
+            "ID": f["id"],
+            "圃場名": f["field_name"] or f"圃場名なし_ID: {f['id']}",
+            "面積 (a)": round(f.get("calculation_area", 0), 2),
+            "選択": st.session_state.select_all
+        } for f in st.session_state.fields
+    ])
 
-    all_selected = st.checkbox("すべて選択", value=True)
-    if all_selected:
-        st.session_state.selected_labels = set(df["Label"].tolist())
+    edited_df = st.data_editor(
+        df,
+        column_config={"選択": st.column_config.CheckboxColumn("選択")},
+        use_container_width=True,
+        num_rows="dynamic",
+        hide_index=True
+    )
 
-    selected_labels = st.multiselect("圃場を選択", options=df["Label"].tolist(), default=list(st.session_state.selected_labels))
-    st.session_state.selected_labels = set(selected_labels)
-
-    selected_fields = [f for f in st.session_state.fields if f"{f['field_name'] or f'ID: {f['id']}'} ({round(f.get('calculation_area', 0), 2)}a)" in selected_labels]
+    selected_ids = edited_df[edited_df["選択"] == True]["ID"].tolist()
+    selected_fields = [f for f in st.session_state.fields if f["id"] in selected_ids]
 
     st.markdown(f"### ✅ 選択された圃場数: {len(selected_fields)} 件")
     st.markdown(f"### 📐 合計面積: {round(sum(f.get('calculation_area', 0) for f in selected_fields), 2)} a")
