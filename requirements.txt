@@ -9,3 +9,7 @@ pyproj
 fiona
 rtree
 streamlit-folium
+selenium
+requests
+webdriver-manager
+pyshp
