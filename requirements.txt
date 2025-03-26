@@ -3,6 +3,7 @@ selenium
 pyvirtualdisplay
 webdriver-manager
 pandas
+shapefile
 geopandas
 folium
 shapely
