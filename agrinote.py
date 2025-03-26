@@ -19,13 +19,16 @@ from selenium.webdriver.chrome.options import Options
 from streamlit_folium import st_folium
 import pandas as pd
 
-st.title("AgNote圃場情報取得 & Shapefile エクスポート")
+st.title("AgriNote 圃場情報取得 & Shapefile エクスポート")
 
 if "fields" not in st.session_state:
     st.session_state.fields = None
 
-EMAIL = st.text_input("📧 メールアドレス")
-PASSWORD = st.text_input("🔑 パスワード", type="password")
+col1, col2 = st.columns([3, 3])
+with col1:
+    EMAIL = st.text_input("📧 メールアドレス", placeholder="your@email.com")
+with col2:
+    PASSWORD = st.text_input("🔑 パスワード", type="password", placeholder="パスワードを入力")
 
 if st.button("🔐 ログイン & データ取得"):
     try:
@@ -87,7 +90,7 @@ if st.button("🔐 ログイン & データ取得"):
                 st.stop()
 
             st.session_state.fields = response.json()
-            st.success(f"✅ {len(st.session_state.fields)} 件の圃場データを取得しました")
+            st.success(f"✅ {len(st.session_state.fields)} 件の土地データを取得しました")
 
     except Exception as e:
         st.error(f"予期せぬエラー: {e}")
@@ -110,7 +113,7 @@ if st.session_state.fields:
             fill_opacity=0.5
         ).add_to(fmap)
 
-    st_folium(fmap, width=700, height=500)
+    st_folium(fmap, use_container_width=True)
 
     # === 表形式でフィルター・ソート・選択 ===
     st.subheader("📋 圃場一覧と選択")
@@ -120,7 +123,7 @@ if st.session_state.fields:
     df = pd.DataFrame([
         {
             "ID": f["id"],
-            "圃場名": f["field_name"] or f"ID: {f['id']}",
+            "圃場名": f["field_name"] or f"圃場名なし_ID: {f['id']}",
             "面積 (a)": round(f.get("calculation_area", 0), 2),
             "選択": st.session_state.select_all
         } for f in st.session_state.fields
@@ -153,7 +156,7 @@ if st.session_state.fields:
                 coords = [(pt["lng"], pt["lat"]) for pt in f["region_latlngs"]]
                 if coords[0] != coords[-1]:
                     coords.append(coords[0])
-                field_names.append(f["field_name"] or f"圃場名なし ID: {f['id']}")
+                field_names.append(f["field_name"] or f"ID: {f['id']}")
                 polygons.append(Polygon(coords))
 
             gdf = gpd.GeoDataFrame({
