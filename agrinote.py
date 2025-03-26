@@ -10,29 +10,22 @@ import os
 import zipfile
 import tempfile
 import folium
-from folium import GeoJson
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
 from streamlit_folium import st_folium
-import math
 
-
-st.title("AgriNote 圃場データ取得＆Shapefileエクスポーター")
+st.title("AgriNote 土地情報取得 & Shapefile エクスポート")
 
 if "fields" not in st.session_state:
     st.session_state.fields = None
-if "zip_paths" not in st.session_state:
-    st.session_state.zip_paths = []
 
-EMAIL = st.text_input("メールアドレス")
-PASSWORD = st.text_input("パスワード", type="password")
+EMAIL = st.text_input("📧 メールアドレス")
+PASSWORD = st.text_input("🔑 パスワード", type="password")
 
-login_clicked = st.button("ログインしてデータ取得")
-
-if login_clicked:
+if st.button("🔐 ログイン & データ取得"):
     try:
         with st.spinner("ログイン中..."):
             chrome_options = Options()
@@ -40,7 +33,8 @@ if login_clicked:
             chrome_options.add_argument("--headless")
             chrome_options.add_argument("--no-sandbox")
             chrome_options.add_argument("--disable-dev-shm-usage")
-            driver = webdriver.Chrome(service=Service("/usr/bin/chromedriver"),options=chrome_options)
+
+            driver = webdriver.Chrome(service=Service("/usr/bin/chromedriver"), options=chrome_options)
             driver.get("https://agri-note.jp/b/login/")
             time.sleep(2)
 
@@ -58,11 +52,11 @@ if login_clicked:
 
             cookies_list = driver.get_cookies()
             cookie_dict = {cookie['name']: cookie['value'] for cookie in cookies_list}
-
             required = ['an_api_token', 'an_login_status', 'tracking_user_uuid']
+
             if not all(k in cookie_dict for k in required):
-                st.error("❌ 必要なクッキーが揃っていません")
-                st.write("取得されたクッキー:", cookie_dict)
+                st.error("❌ 必要なCookieが見つかりません")
+                st.write("Cookie debug", cookie_dict)
                 driver.quit()
                 st.stop()
 
@@ -91,77 +85,73 @@ if login_clicked:
                 st.stop()
 
             st.session_state.fields = response.json()
-            st.success(f"✅ {len(st.session_state.fields)}件の圃場データを取得しました")
-
-            center = st.session_state.fields[0]["center_latlng"]
-            fmap = folium.Map(location=[center["lat"], center["lng"]], zoom_start=15)
-            for field in st.session_state.fields:
-                coords = [(pt['lat'], pt['lng']) for pt in field['region_latlngs']]
-                folium.Polygon(
-                    locations=coords,
-                    popup=field['field_name'] or f"ID: {field['id']}",
-                    tooltip=field['field_name'] or f"ID: {field['id']}",
-                    color='red',
-                    fill=True,
-                    fill_opacity=0.5
-                ).add_to(fmap)
-            st_folium(fmap, width=700, height=500)
-
-            temp_dir = tempfile.mkdtemp()
-            st.session_state.zip_paths = []
-
-            chunk_size = 300
-            chunks = [st.session_state.fields[i:i + chunk_size] for i in range(0, len(st.session_state.fields), chunk_size)]
-
-            for idx, chunk in enumerate(chunks):
-                shp_path = os.path.join(temp_dir, f"fields_{idx+1}")
-                with shapefile.Writer(shp_path, shapeType=shapefile.POLYGON) as w:
-                    w.field("id", "N")
-                    w.field("name", "C")
-                    w.field("area", "F", decimal=3)
-
-                    for field in chunk:
-                        coords = [(pt["lng"], pt["lat"]) for pt in field["region_latlngs"]]
-                        if coords[0] != coords[-1]:
-                            coords.append(coords[0])
-                        w.poly([coords])
-                        w.record(field["id"], field["field_name"], field["calculation_area"])
-
-                zip_path = os.path.join(temp_dir, f"agnote_xarvio_shapefile_{idx+1}.zip")
-                with zipfile.ZipFile(zip_path, "w") as zipf:
-                    for ext in ["shp", "shx", "dbf"]:
-                        zipf.write(f"{shp_path}.{ext}", arcname=f"fields_{idx+1}.{ext}")
-                st.session_state.zip_paths.append(zip_path)
+            st.success(f"✅ {len(st.session_state.fields)} 件の土地データを取得しました")
 
     except Exception as e:
-        st.error(f"予期せぬエラーが発生しました: {e}")
+        st.error(f"予期せぬエラー: {e}")
 
+# === マップ & 選択 ===
 if st.session_state.fields:
-    st.subheader("圃場マップ")
+    st.subheader("🖼️ 土地マップ")
+
     center = st.session_state.fields[0]["center_latlng"]
     fmap = folium.Map(location=[center["lat"], center["lng"]], zoom_start=15)
-    for field in st.session_state.fields:
-        coords = [(pt['lat'], pt['lng']) for pt in field['region_latlngs']]
+
+    # ID -> field の辞書
+    field_map = {}
+    options = []
+    for f in st.session_state.fields:
+        name = f['field_name'] or f"ID: {f['id']}"
+        area = round(f.get("calculation_area", 0), 2)
+        display_name = f"{name} ({area}a)"
+        options.append(display_name)
+        field_map[display_name] = f
+        coords = [(pt['lat'], pt['lng']) for pt in f['region_latlngs']]
         folium.Polygon(
             locations=coords,
-            popup=field['field_name'] or f"ID: {field['id']}",
-            tooltip=field['field_name'] or f"ID: {field['id']}",
+            popup=name,
+            tooltip=display_name,
             color='red',
             fill=True,
             fill_opacity=0.5
         ).add_to(fmap)
+
     st_folium(fmap, width=700, height=500)
 
-    total = len(st.session_state.fields)
-    chunk_size = 300
+    st.subheader("💪 土地選択 & ダウンロード")
 
-    for idx, zip_path in enumerate(st.session_state.zip_paths):
-        start = idx * chunk_size + 1
-        end = min((idx + 1) * chunk_size, total)
+    all_selected = st.checkbox("すべて選択", value=True)
+    selected = st.multiselect("選択した土地のShapefileをダウンロード", options=options, default=options if all_selected else [])
+
+    selected_fields = [field_map[label] for label in selected]
+
+    if selected_fields:
+        temp_dir = tempfile.mkdtemp()
+        shp_path = os.path.join(temp_dir, "selected_fields")
+
+        with shapefile.Writer(shp_path, shapeType=shapefile.POLYGON) as w:
+            w.field("id", "N")
+            w.field("name", "C")
+            w.field("area", "F", decimal=3)
+
+            for field in selected_fields:
+                coords = [(pt["lng"], pt["lat"]) for pt in field["region_latlngs"]]
+                if coords[0] != coords[-1]:
+                    coords.append(coords[0])
+                w.poly([coords])
+                w.record(field["id"], field["field_name"], field["calculation_area"])
+
+        zip_path = os.path.join(temp_dir, "agnote_xarvio_selected_shapefile.zip")
+        with zipfile.ZipFile(zip_path, "w") as zipf:
+            for ext in ["shp", "shx", "dbf"]:
+                zipf.write(f"{shp_path}.{ext}", arcname=f"selected_fields.{ext}")
+
         with open(zip_path, "rb") as f:
             st.download_button(
-                label=f"📦 Shapefileをダウンロード (圃場 {start}–{end})",
+                label="⬇️ 選択した圃場を Shapefile (ZIP) としてダウンロード",
                 data=f,
-                file_name=f"agnote_xarvio_shapefile_{idx+1}.zip",
+                file_name="agnote_xarvio_selected_shapefile.zip",
                 mime="application/zip"
             )
+    else:
+        st.info("🔍 土地を選択してください")
