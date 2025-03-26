@@ -1,4 +1,6 @@
 import streamlit as st
+st.set_page_config(page_title="AgriNote Shapefile Exporter", layout="wide")
+
 import time
 import requests
 import json
@@ -17,7 +19,7 @@ from selenium.webdriver.chrome.options import Options
 from streamlit_folium import st_folium
 import math
 
-st.set_page_config(page_title="AgriNote Shapefile Exporter", layout="wide")
+
 st.title("AgriNote 圃場データ取得＆Shapefileエクスポーター")
 
 if "fields" not in st.session_state:
