@@ -1,7 +1,6 @@
 streamlit
 selenium
 pyvirtualdisplay
-webdriver-manager
 pandas
 geopandas
 folium
