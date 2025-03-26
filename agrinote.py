@@ -9,15 +9,14 @@ import os
 import zipfile
 import tempfile
 import folium
+import geopandas as gpd
+from shapely.geometry import Polygon
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
 from streamlit_folium import st_folium
-import geopandas as gpd
-from shapely.geometry import Polygon
-import pandas as pd
 
 st.title("AgriNote 土地情報取得 & Shapefile エクスポート")
 
@@ -99,14 +98,10 @@ if st.session_state.fields:
     center = st.session_state.fields[0]["center_latlng"]
     fmap = folium.Map(location=[center["lat"], center["lng"]], zoom_start=15)
 
-    field_map = {}
-    options = []
     for f in st.session_state.fields:
         name = f['field_name'] or f"ID: {f['id']}"
         area = round(f.get("calculation_area", 0), 2)
         display_name = f"{name} ({area}a)"
-        options.append(display_name)
-        field_map[display_name] = f
         coords = [(pt['lat'], pt['lng']) for pt in f['region_latlngs']]
         folium.Polygon(
             locations=coords,
@@ -119,43 +114,47 @@ if st.session_state.fields:
 
     st_folium(fmap, width=700, height=500)
 
-    st.subheader("💪 土地選択 & ダウンロード")
+    st.subheader("📋 圃場一覧と選択")
+    selected_ids = []
+    with st.form("field_selection_form"):
+        for field in st.session_state.fields:
+            name = field['field_name'] or f"ID: {field['id']}"
+            area = round(field.get("calculation_area", 0), 2)
+            label = f"{name} / {area}a"
+            if st.checkbox(label, key=f"select_{field['id']}"):
+                selected_ids.append(field['id'])
+        st.form_submit_button("✅ 選択を確定")
 
-    all_selected = st.checkbox("すべて選択", value=True)
-    selected = st.multiselect("選択した土地のShapefileをダウンロード", options=options, default=options if all_selected else [])
-
-    selected_fields = [field_map[label] for label in selected]
+    selected_fields = [f for f in st.session_state.fields if f['id'] in selected_ids]
 
     if selected_fields:
-        temp_dir = tempfile.mkdtemp()
-        shp_dir = os.path.join(temp_dir, "shapefile")
-        os.makedirs(shp_dir, exist_ok=True)
-        shp_path = os.path.join(shp_dir, "selected_fields.shp")
+        st.success(f"🗂️ {len(selected_fields)} 件の圃場を選択中")
 
-        # GeoDataFrame作成
-        names = []
-        areas = []
-        geometries = []
+        temp_dir = tempfile.mkdtemp()
+        shp_path = os.path.join(temp_dir, "selected_fields.shp")
+
+        field_names = []
+        polygons = []
 
         for field in selected_fields:
-            coords = [(pt["lng"], pt["lat"]) for pt in field["region_latlngs"]]
-            if coords[0] != coords[-1]:
-                coords.append(coords[0])
-            polygon = Polygon(coords)
-            geometries.append(polygon)
-            names.append(field["field_name"] or f"ID: {field['id']}")
-            areas.append(field["calculation_area"])
+            name = field.get("field_name", "（圃場名なし）").strip()
+            region_latlngs = field.get("region_latlngs", [])
+            if region_latlngs:
+                coords = [(pt["lng"], pt["lat"]) for pt in region_latlngs]
+                if coords[0] != coords[-1]:
+                    coords.append(coords[0])
+                polygon = Polygon(coords)
+                field_names.append(name)
+                polygons.append(polygon)
 
-        df = pd.DataFrame({"name": names, "area": areas})
-        gdf = gpd.GeoDataFrame(df, geometry=gpd.GeoSeries(geometries, crs="EPSG:4326"))
-
+        gdf = gpd.GeoDataFrame({"FieldName": field_names, "geometry": polygons}, crs="EPSG:4326")
         gdf.to_file(shp_path, driver="ESRI Shapefile", encoding="utf-8")
 
         zip_path = os.path.join(temp_dir, "agnote_xarvio_selected_shapefile.zip")
-        with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zipf:
-            for file in os.listdir(shp_dir):
-                file_path = os.path.join(shp_dir, file)
-                zipf.write(file_path, arcname=file)
+        with zipfile.ZipFile(zip_path, "w") as zipf:
+            for file in os.listdir(temp_dir):
+                if file.startswith("selected_fields"):
+                    zipf.write(os.path.join(temp_dir, file), arcname=file)
 
         with open(zip_path, "rb") as f:
             st.download_button(
@@ -165,4 +164,4 @@ if st.session_state.fields:
                 mime="application/zip"
             )
     else:
-        st.info("🔍 土地を選択してください")
+        st.info("☝️ 表から圃場を選択してください")
