@@ -9,8 +9,10 @@ pyproj
 fiona
 rtree
 streamlit-folium
-selenium
-requests
-webdriver-manager
 pyshp
 pyvirtualdisplay
+fastapi
+uvicorn
+selenium
+requests
+pydantic
