@@ -1,5 +1,6 @@
 streamlit
 selenium
+pyshp
 pyvirtualdisplay
 pandas
 geopandas
@@ -11,6 +12,5 @@ pyproj
 fiona
 rtree
 streamlit-folium
-pyshp>=2.3.0
 requests
 pydantic
