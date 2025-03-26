@@ -152,10 +152,15 @@ if st.session_state.fields:
         ).add_to(fmap)
     st_folium(fmap, width=700, height=500)
 
+    total = len(st.session_state.fields)
+    chunk_size = 300
+
     for idx, zip_path in enumerate(st.session_state.zip_paths):
+        start = idx * chunk_size + 1
+        end = min((idx + 1) * chunk_size, total)
         with open(zip_path, "rb") as f:
             st.download_button(
-                label=f"Shapefileをダウンロード (ZIP形式) - Part {idx+1}",
+                label=f"📦 Shapefileをダウンロード (圃場 {start}–{end})",
                 data=f,
                 file_name=f"agnote_xarvio_shapefile_{idx+1}.zip",
                 mime="application/zip"
