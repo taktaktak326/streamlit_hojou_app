@@ -22,8 +22,13 @@ if st.button("✅ ログインして取得"):
         try:
             res = requests.post(API_URL, json={"email": email, "password": password})
             if res.status_code != 200:
-                st.error(f"APIエラー: {res.status_code}")
+                try:
+                    detail = res.json().get("detail", "詳細不明")
+                except:
+                    detail = "エラーレスポンスを解析できませんでした"
+                st.error(f"APIエラー: {res.status_code}\n{detail}")
                 st.stop()
+
 
             fields = res.json()
             st.success(f"{len(fields)} 件の圃場を取得しました")
