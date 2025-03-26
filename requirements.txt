@@ -14,5 +14,6 @@ pyvirtualdisplay
 fastapi
 uvicorn
 selenium
+webdriver-manager
 requests
 pydantic
