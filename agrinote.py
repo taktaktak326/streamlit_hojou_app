@@ -5,7 +5,6 @@ import time
 import requests
 import json
 import urllib.parse
-import shapefile
 import os
 import zipfile
 import tempfile
@@ -16,6 +15,9 @@ from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
 from streamlit_folium import st_folium
+import geopandas as gpd
+from shapely.geometry import Polygon
+import pandas as pd
 
 st.title("AgriNote 土地情報取得 & Shapefile エクスポート")
 
@@ -97,7 +99,6 @@ if st.session_state.fields:
     center = st.session_state.fields[0]["center_latlng"]
     fmap = folium.Map(location=[center["lat"], center["lng"]], zoom_start=15)
 
-    # ID -> field の辞書
     field_map = {}
     options = []
     for f in st.session_state.fields:
@@ -127,24 +128,34 @@ if st.session_state.fields:
 
     if selected_fields:
         temp_dir = tempfile.mkdtemp()
-        shp_path = os.path.join(temp_dir, "selected_fields")
+        shp_dir = os.path.join(temp_dir, "shapefile")
+        os.makedirs(shp_dir, exist_ok=True)
+        shp_path = os.path.join(shp_dir, "selected_fields.shp")
 
-        with shapefile.Writer(shp_path, shapeType=shapefile.POLYGON) as w:
-            w.field("id", "N")
-            w.field("name", "C")
-            w.field("area", "F", decimal=3)
+        # GeoDataFrame作成
+        names = []
+        areas = []
+        geometries = []
 
-            for field in selected_fields:
-                coords = [(pt["lng"], pt["lat"]) for pt in field["region_latlngs"]]
-                if coords[0] != coords[-1]:
-                    coords.append(coords[0])
-                w.poly([coords])
-                w.record(field["id"], field["field_name"], field["calculation_area"])
+        for field in selected_fields:
+            coords = [(pt["lng"], pt["lat"]) for pt in field["region_latlngs"]]
+            if coords[0] != coords[-1]:
+                coords.append(coords[0])
+            polygon = Polygon(coords)
+            geometries.append(polygon)
+            names.append(field["field_name"] or f"ID: {field['id']}")
+            areas.append(field["calculation_area"])
+
+        df = pd.DataFrame({"name": names, "area": areas})
+        gdf = gpd.GeoDataFrame(df, geometry=gpd.GeoSeries(geometries, crs="EPSG:4326"))
+
+        gdf.to_file(shp_path, driver="ESRI Shapefile", encoding="utf-8")
 
         zip_path = os.path.join(temp_dir, "agnote_xarvio_selected_shapefile.zip")
-        with zipfile.ZipFile(zip_path, "w") as zipf:
-            for ext in ["shp", "shx", "dbf"]:
-                zipf.write(f"{shp_path}.{ext}", arcname=f"selected_fields.{ext}")
+        with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zipf:
+            for file in os.listdir(shp_dir):
+                file_path = os.path.join(shp_dir, file)
+                zipf.write(file_path, arcname=file)
 
         with open(zip_path, "rb") as f:
             st.download_button(
