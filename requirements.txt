@@ -1,9 +1,7 @@
 streamlit
 selenium
 pyvirtualdisplay
-webdriver-manager
 pandas
-shapefile
 geopandas
 folium
 shapely
@@ -14,8 +12,5 @@ fiona
 rtree
 streamlit-folium
 pyshp
-fastapi
-uvicorn
-seleniumbase
 requests
 pydantic
