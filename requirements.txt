@@ -13,7 +13,5 @@ fiona
 rtree
 streamlit-folium
 pyshp 
-fastapi
-uvicorn
 requests
 pydantic
