@@ -11,6 +11,6 @@ pyproj
 fiona
 rtree
 streamlit-folium
-pyshp 
+pyshp>=2.3.0
 requests
 pydantic
