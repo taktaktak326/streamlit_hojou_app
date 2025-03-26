@@ -13,12 +13,12 @@ from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.chrome.service import Service
-from webdriver_manager.chrome import ChromeDriverManager
+from selenium.webdriver.chrome.options import Options
 from streamlit_folium import st_folium
 import math
 
 st.set_page_config(page_title="AgriNote Shapefile Exporter", layout="wide")
-st.title("AgriNote 圃場データ取得＆Shapefileエクスポーター２")
+st.title("AgriNote 圃場データ取得＆Shapefileエクスポーター")
 
 if "fields" not in st.session_state:
     st.session_state.fields = None
@@ -33,11 +33,12 @@ login_clicked = st.button("ログインしてデータ取得")
 if login_clicked:
     try:
         with st.spinner("ログイン中..."):
-            options = webdriver.ChromeOptions()
-            options.add_argument("--headless")
-            options.add_argument("--no-sandbox")
-            options.add_argument("--disable-dev-shm-usage")
-            driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
+            chrome_options = Options()
+            chrome_options.binary_location = "/usr/bin/chromium-browser"
+            chrome_options.add_argument("--headless")
+            chrome_options.add_argument("--no-sandbox")
+            chrome_options.add_argument("--disable-dev-shm-usage")
+            driver = webdriver.Chrome(service=Service("/usr/lib/chromium-browser/chromedriver"), options=chrome_options)
 
             driver.get("https://agri-note.jp/b/login/")
             time.sleep(2)
@@ -91,7 +92,6 @@ if login_clicked:
             st.session_state.fields = response.json()
             st.success(f"✅ {len(st.session_state.fields)}件の圃場データを取得しました")
 
-            # 中心座標を最初の圃場の中心から取得
             center = st.session_state.fields[0]["center_latlng"]
             fmap = folium.Map(location=[center["lat"], center["lng"]], zoom_start=15)
             for field in st.session_state.fields:
