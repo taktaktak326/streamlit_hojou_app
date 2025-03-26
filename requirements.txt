@@ -13,7 +13,7 @@ pyshp
 pyvirtualdisplay
 fastapi
 uvicorn
-selenium
+seleniumbase
 webdriver-manager
 requests
 pydantic
