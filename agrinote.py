@@ -1,75 +1,76 @@
-from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
-from selenium import webdriver
-from selenium.webdriver.common.by import By
-from selenium.webdriver.common.keys import Keys
-from selenium.webdriver.chrome.options import Options
-import time
-import json
-import urllib.parse
+import streamlit as st
 import requests
+import folium
+from streamlit_folium import st_folium
+import shapefile
+import tempfile
+import os
+import zipfile
 
-app = FastAPI()
+st.set_page_config(page_title="AgriNote 圃場マップ＆Shapefile出力", layout="wide")
+st.title("📍 AgriNote 圃場マップ（API連携）")
 
-class LoginRequest(BaseModel):
-    email: str
-    password: str
+# あなたのCloud RunのURLに変更！
+API_URL = "https://agrinote-api-xxxxx.a.run.app/fetch-fields"  # ← ← 替えてください
 
-@app.post("/fetch-fields")
-def fetch_fields(req: LoginRequest):
-    chrome_options = Options()
-    chrome_options.add_argument("--headless")
-    chrome_options.add_argument("--no-sandbox")
-    chrome_options.add_argument("--disable-dev-shm-usage")
+email = st.text_input("メールアドレス")
+password = st.text_input("パスワード", type="password")
 
-    chrome_options.binary_location = "/usr/bin/google-chrome"
-    driver = webdriver.Chrome(options=chrome_options)
+if st.button("✅ ログインして取得"):
+    with st.spinner("圃場データ取得中..."):
+        try:
+            res = requests.post(API_URL, json={"email": email, "password": password})
+            if res.status_code != 200:
+                st.error(f"APIエラー: {res.status_code}")
+                st.stop()
 
-    try:
-        driver.get("https://agri-note.jp/b/login/")
-        time.sleep(2)
+            fields = res.json()
+            st.success(f"{len(fields)} 件の圃場を取得しました")
 
-        inputs = driver.find_elements(By.CLASS_NAME, "_1g2kt34")
-        if len(inputs) < 2:
-            raise HTTPException(status_code=500, detail="Login form not found")
+            # 地図を表示
+            center = fields[0]["center_latlng"]
+            fmap = folium.Map(location=[center["lat"], center["lng"]], zoom_start=15)
+            for field in fields:
+                coords = [(pt["lat"], pt["lng"]) for pt in field["region_latlngs"]]
+                folium.Polygon(
+                    locations=coords,
+                    tooltip=field["field_name"] or f"ID: {field['id']}",
+                    color="red",
+                    fill=True,
+                    fill_opacity=0.5
+                ).add_to(fmap)
+            st.subheader("🗺 圃場マップ")
+            st_folium(fmap, width=700, height=500)
 
-        inputs[0].send_keys(req.email)
-        inputs[1].send_keys(req.password)
-        inputs[1].send_keys(Keys.RETURN)
-        time.sleep(5)
+            # Shapefile保存（temp dirに保存してzipにする）
+            temp_dir = tempfile.mkdtemp()
+            shp_path = os.path.join(temp_dir, "fields")
+            with shapefile.Writer(shp_path, shapeType=shapefile.POLYGON) as w:
+                w.field("id", "N")
+                w.field("name", "C")
+                w.field("area", "F", decimal=3)
+                for field in fields:
+                    coords = [(pt["lng"], pt["lat"]) for pt in field["region_latlngs"]]
+                    if coords[0] != coords[-1]:
+                        coords.append(coords[0])
+                    w.poly([coords])
+                    w.record(field["id"], field["field_name"], field["calculation_area"])
 
-        cookies_list = driver.get_cookies()
-        cookie_dict = {cookie['name']: cookie['value'] for cookie in cookies_list}
+            # ZIP作成
+            zip_path = os.path.join(temp_dir, "agnote_xarvio_shapefile.zip")
+            with zipfile.ZipFile(zip_path, "w") as zipf:
+                for ext in ["shp", "shx", "dbf"]:
+                    file = f"{shp_path}.{ext}"
+                    zipf.write(file, arcname=os.path.basename(file))
 
-        required = ['an_api_token', 'an_login_status', 'tracking_user_uuid']
-        if not all(k in cookie_dict for k in required):
-            raise HTTPException(status_code=403, detail="Required cookies missing")
+            # ダウンロードボタン
+            with open(zip_path, "rb") as f:
+                st.download_button(
+                    label="📦 Shapefileをダウンロード",
+                    data=f,
+                    file_name="agnote_xarvio_shapefile.zip",
+                    mime="application/zip"
+                )
 
-        csrf_token = json.loads(urllib.parse.unquote(cookie_dict['an_login_status']))["csrf"]
-
-        cookies = {
-            "an_api_token": cookie_dict["an_api_token"],
-            "an_login_status": cookie_dict["an_login_status"],
-            "tracking_user_uuid": cookie_dict["tracking_user_uuid"],
-        }
-
-        headers = {
-            "x-an-csrf-token": csrf_token,
-            "x-user-uuid": cookie_dict['tracking_user_uuid'],
-            "x-agri-note-api-client": "v2.97.0",
-            "x-requested-with": "XMLHttpRequest",
-            "referer": "https://agri-note.jp/b/",
-            "user-agent": "Mozilla/5.0"
-        }
-
-        driver.quit()
-
-        response = requests.get("https://agri-note.jp/an-api/v1/agri_fields", headers=headers, cookies=cookies)
-        if response.status_code != 200:
-            raise HTTPException(status_code=response.status_code, detail="Failed to fetch data")
-
-        return response.json()
-
-    except Exception as e:
-        driver.quit()
-        raise HTTPException(status_code=500, detail=str(e))
+        except Exception as e:
+            st.error(f"❌ 通信または処理中にエラー: {e}")
