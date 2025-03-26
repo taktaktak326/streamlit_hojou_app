@@ -12,7 +12,7 @@ st.set_page_config(page_title="AgriNote 圃場マップ＆Shapefile出力", layo
 st.title("📍 AgriNote 圃場マップ（API連携）")
 
 # Cloud Run にデプロイしたAPIのURLに置き換えてください
-API_URL = "https://agrinote-api-908507328312.asia-northeast1.run.app"
+API_URL = "https://agrinote-api-908507328312.asia-northeast1.run.app/fetch-fields"
 
 email = st.text_input("メールアドレス")
 password = st.text_input("パスワード", type="password")
