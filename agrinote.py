@@ -6,12 +6,13 @@ import shapefile
 import tempfile
 import os
 import zipfile
+import pandas as pd
 
 st.set_page_config(page_title="AgriNote 圃場マップ＆Shapefile出力", layout="wide")
 st.title("📍 AgriNote 圃場マップ（API連携）")
 
-# あなたのCloud RunのURLに変更！
-API_URL = "https://agrinote-api-908507328312.asia-northeast1.run.app"  # ← ← 替えてください
+# Cloud Run にデプロイしたAPIのURLに置き換えてください
+API_URL = "https://agrinote-api-908507328312.asia-northeast1.run.app"
 
 email = st.text_input("メールアドレス")
 password = st.text_input("パスワード", type="password")
@@ -26,6 +27,23 @@ if st.button("✅ ログインして取得"):
 
             fields = res.json()
             st.success(f"{len(fields)} 件の圃場を取得しました")
+
+            # 圃場一覧をDataFrameで表示
+            df = pd.DataFrame([
+                {"ID": f["id"], "圃場名": f["field_name"], "面積": f["calculation_area"]} for f in fields
+            ])
+
+            # フィルター（圃場名）
+            search = st.text_input("🔍 圃場名で検索")
+            if search:
+                fields = [f for f in fields if search in f["field_name"]]
+                df = df[df["圃場名"].str.contains(search)]
+
+            st.dataframe(df, use_container_width=True)
+
+            if not fields:
+                st.warning("🔍 条件に一致する圃場がありません")
+                st.stop()
 
             # 地図を表示
             center = fields[0]["center_latlng"]
@@ -42,35 +60,39 @@ if st.button("✅ ログインして取得"):
             st.subheader("🗺 圃場マップ")
             st_folium(fmap, width=700, height=500)
 
-            # Shapefile保存（temp dirに保存してzipにする）
-            temp_dir = tempfile.mkdtemp()
-            shp_path = os.path.join(temp_dir, "fields")
-            with shapefile.Writer(shp_path, shapeType=shapefile.POLYGON) as w:
-                w.field("id", "N")
-                w.field("name", "C")
-                w.field("area", "F", decimal=3)
-                for field in fields:
-                    coords = [(pt["lng"], pt["lat"]) for pt in field["region_latlngs"]]
-                    if coords[0] != coords[-1]:
-                        coords.append(coords[0])
-                    w.poly([coords])
-                    w.record(field["id"], field["field_name"], field["calculation_area"])
+            # 圃場を300件ごとに分割してShapefileを作成
+            chunk_size = 300
+            chunks = [fields[i:i + chunk_size] for i in range(0, len(fields), chunk_size)]
 
-            # ZIP作成
-            zip_path = os.path.join(temp_dir, "agnote_xarvio_shapefile.zip")
-            with zipfile.ZipFile(zip_path, "w") as zipf:
-                for ext in ["shp", "shx", "dbf"]:
-                    file = f"{shp_path}.{ext}"
-                    zipf.write(file, arcname=os.path.basename(file))
+            for idx, chunk in enumerate(chunks):
+                temp_dir = tempfile.mkdtemp()
+                shp_path = os.path.join(temp_dir, f"fields_{idx+1}")
+                with shapefile.Writer(shp_path, shapeType=shapefile.POLYGON) as w:
+                    w.field("id", "N")
+                    w.field("name", "C")
+                    w.field("area", "F", decimal=3)
+                    for field in chunk:
+                        coords = [(pt["lng"], pt["lat"]) for pt in field["region_latlngs"]]
+                        if coords[0] != coords[-1]:
+                            coords.append(coords[0])
+                        w.poly([coords])
+                        w.record(field["id"], field["field_name"], field["calculation_area"])
 
-            # ダウンロードボタン
-            with open(zip_path, "rb") as f:
-                st.download_button(
-                    label="📦 Shapefileをダウンロード",
-                    data=f,
-                    file_name="agnote_xarvio_shapefile.zip",
-                    mime="application/zip"
-                )
+                # ZIP作成
+                zip_path = os.path.join(temp_dir, f"agnote_xarvio_shapefile_part{idx+1}.zip")
+                with zipfile.ZipFile(zip_path, "w") as zipf:
+                    for ext in ["shp", "shx", "dbf"]:
+                        file = f"{shp_path}.{ext}"
+                        zipf.write(file, arcname=os.path.basename(file))
+
+                # ダウンロードボタン
+                with open(zip_path, "rb") as f:
+                    st.download_button(
+                        label=f"📦 Shapefileをダウンロード（Part {idx+1}）",
+                        data=f,
+                        file_name=f"agnote_xarvio_shapefile_part{idx+1}.zip",
+                        mime="application/zip"
+                    )
 
         except Exception as e:
             st.error(f"❌ 通信または処理中にエラー: {e}")
