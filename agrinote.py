@@ -18,7 +18,7 @@ from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
 from streamlit_folium import st_folium
 
-st.title("AgriNote 土地情報取得 & Shapefile エクスポート")
+st.title("AgriNote 土地情報取得 & Shapefile エクスポート２")
 
 if "fields" not in st.session_state:
     st.session_state.fields = None
