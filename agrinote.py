@@ -5,11 +5,11 @@ import time
 import requests
 import json
 import urllib.parse
-import geopandas as gpd
 import os
 import zipfile
 import tempfile
 import folium
+import geopandas as gpd
 from shapely.geometry import Polygon
 from selenium import webdriver
 from selenium.webdriver.common.by import By
@@ -17,6 +17,7 @@ from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
 from streamlit_folium import st_folium
+import pandas as pd
 
 st.title("AgriNote 土地情報取得 & Shapefile エクスポート")
 
@@ -91,83 +92,88 @@ if st.button("🔐 ログイン & データ取得"):
     except Exception as e:
         st.error(f"予期せぬエラー: {e}")
 
-# === マップ & 表形式選択 ===
+# === マップ表示 ===
 if st.session_state.fields:
     st.subheader("🖼️ 土地マップ")
-
     center = st.session_state.fields[0]["center_latlng"]
     fmap = folium.Map(location=[center["lat"], center["lng"]], zoom_start=15)
 
-    field_map = {}
-    table_data = []
-
     for f in st.session_state.fields:
-        name = f['field_name'] or f"ID: {f['id']}"
-        area = round(f.get("calculation_area", 0), 2)
         coords = [(pt['lat'], pt['lng']) for pt in f['region_latlngs']]
+        display_name = f["field_name"] or f"ID: {f['id']}"
         folium.Polygon(
             locations=coords,
-            popup=name,
-            tooltip=f"{name} ({area}a)",
+            popup=display_name,
+            tooltip=f"{display_name} ({round(f.get('calculation_area', 0), 2)}a)",
             color='red',
             fill=True,
             fill_opacity=0.5
         ).add_to(fmap)
-        key = f"{name} ({area}a)"
-        field_map[key] = f
-        table_data.append((key, area))
 
     st_folium(fmap, width=700, height=500)
 
-    st.subheader("✅ 表形式で圃場選択")
+    # === 表形式でフィルター・ソート・選択 ===
+    st.subheader("📋 圃場一覧と選択")
+    df = pd.DataFrame([
+        {
+            "ID": f["id"],
+            "圃場名": f["field_name"] or f"ID: {f['id']}",
+            "面積 (a)": round(f.get("calculation_area", 0), 2),
+            "選択": True
+        } for f in st.session_state.fields
+    ])
 
-    all_selected = st.checkbox("すべて選択", value=True)
-    selections = {}
-    total_area = 0.0
+    edited_df = st.data_editor(
+        df,
+        column_config={"選択": st.column_config.CheckboxColumn("選択")},
+        use_container_width=True,
+        num_rows="dynamic",
+        hide_index=True
+    )
 
-    for label, area in table_data:
-        selected = st.checkbox(label, value=all_selected, key=label)
-        selections[label] = selected
-        if selected:
-            total_area += area
+    selected_ids = edited_df[edited_df["選択"] == True]["ID"].tolist()
+    selected_fields = [f for f in st.session_state.fields if f["id"] in selected_ids]
 
-    selected_fields = [field_map[label] for label, selected in selections.items() if selected]
-
-    st.markdown(f"**🧮 選択した圃場数: {len(selected_fields)} / 合計面積: {round(total_area, 2)}a**")
+    st.markdown(f"### ✅ 選択された圃場数: {len(selected_fields)} 件")
+    st.markdown(f"### 📐 合計面積: {round(sum(f.get('calculation_area', 0) for f in selected_fields), 2)} a")
 
     if selected_fields:
         temp_dir = tempfile.mkdtemp()
+        zip_paths = []
         chunk_size = 300
         chunks = [selected_fields[i:i + chunk_size] for i in range(0, len(selected_fields), chunk_size)]
 
         for idx, chunk in enumerate(chunks):
+            field_names = []
             polygons = []
-            names = []
-            for field in chunk:
-                coords = [(pt["lng"], pt["lat"]) for pt in field["region_latlngs"]]
+            for f in chunk:
+                coords = [(pt["lng"], pt["lat"]) for pt in f["region_latlngs"]]
                 if coords[0] != coords[-1]:
                     coords.append(coords[0])
-                polygon = Polygon(coords)
-                name = field.get("field_name") or f"ID: {field['id']}"
-                names.append(name)
-                polygons.append(polygon)
+                field_names.append(f["field_name"] or f"ID: {f['id']}")
+                polygons.append(Polygon(coords))
 
-            gdf = gpd.GeoDataFrame({"FieldName": names, "geometry": polygons}, crs="EPSG:4326")
-            shp_dir = os.path.join(temp_dir, f"shp_{idx+1}")
-            os.makedirs(shp_dir, exist_ok=True)
-            shp_path = os.path.join(shp_dir, "selected_fields.shp")
-            gdf.to_file(shp_path, driver="ESRI Shapefile", encoding="utf-8")
+            gdf = gpd.GeoDataFrame({
+                "FieldName": field_names,
+                "geometry": polygons
+            }, crs="EPSG:4326")
 
-            zip_path = os.path.join(temp_dir, f"agnote_xarvio_selected_part_{idx+1}.zip")
+            shp_base = os.path.join(temp_dir, f"selected_{idx+1}")
+            gdf.to_file(f"{shp_base}.shp", driver="ESRI Shapefile", encoding="utf-8")
+
+            zip_path = os.path.join(temp_dir, f"agnote_xarvio_selected_{idx+1}.zip")
             with zipfile.ZipFile(zip_path, "w") as zipf:
-                for file in os.listdir(shp_dir):
-                    zipf.write(os.path.join(shp_dir, file), arcname=file)
+                for ext in ["shp", "shx", "dbf", "prj"]:
+                    zipf.write(f"{shp_base}.{ext}", arcname=f"selected_{idx+1}.{ext}")
 
+            zip_paths.append(zip_path)
+
+        for idx, zip_path in enumerate(zip_paths):
             with open(zip_path, "rb") as f:
                 st.download_button(
-                    label=f"⬇️ Part {idx+1} - Shapefile ダウンロード",
+                    label=f"⬇️ ダウンロード Part {idx+1}",
                     data=f,
-                    file_name=f"agnote_xarvio_selected_part_{idx+1}.zip",
+                    file_name=os.path.basename(zip_path),
                     mime="application/zip"
                 )
     else:
