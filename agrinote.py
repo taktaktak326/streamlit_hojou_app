@@ -19,7 +19,7 @@ from selenium.webdriver.chrome.options import Options
 from streamlit_folium import st_folium
 import pandas as pd
 
-st.title("AgriNote 土地情報取得 & Shapefile エクスポート")
+st.title("AgNote圃場情報取得 & Shapefile エクスポート")
 
 if "fields" not in st.session_state:
     st.session_state.fields = None
