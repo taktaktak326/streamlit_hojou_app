@@ -13,3 +13,4 @@ selenium
 requests
 webdriver-manager
 pyshp
+pyvirtualdisplay
