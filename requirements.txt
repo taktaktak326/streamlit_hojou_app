@@ -1,4 +1,7 @@
 streamlit
+selenium
+pyvirtualdisplay
+webdriver-manager
 pandas
 geopandas
 folium
@@ -10,10 +13,8 @@ fiona
 rtree
 streamlit-folium
 pyshp
-pyvirtualdisplay
 fastapi
 uvicorn
 seleniumbase
-webdriver-manager
 requests
 pydantic
