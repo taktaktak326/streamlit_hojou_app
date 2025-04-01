@@ -81,10 +81,10 @@ def create_shapefile(data):
     return zip_filename
 
 # Streamlit UI
-st.title("圃場形状JSONからファイル作成アプリ")
+st.title("Agrinote圃場形状JSONからファイル作成アプリ")
 
 uploaded_file = st.file_uploader("JSONファイルをアップロード", type=["json"])
-json_input = st.text_area("またはJSONデータを直接入力")
+json_input = st.text_area("↓　開発者ツールから取得したJSONデータを貼り付け")
 
 data = None
 if uploaded_file is not None:
