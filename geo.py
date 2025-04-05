@@ -49,8 +49,17 @@ if uploaded_excel_file:
     except Exception as e:
         st.error(f"Excelファイルのシート名を取得できませんでした: {e}")
 
-# **ヘッダー行の指定**
-header_row = st.number_input("カラム名がある行の番号（0から開始）", min_value=0, value=4, step=1)
+if uploaded_excel_file and sheet_name:
+    preview_df = pd.read_excel(uploaded_excel_file, sheet_name=sheet_name, header=None, nrows=25)
+    st.subheader("📋 テーブルのプレビュー（最初の25行）")
+    st.write(preview_df)
+
+    row_options = list(range(1, len(preview_df)))
+    selected_row_display = st.selectbox("カラム名がある行番号を選んでください（1行目から）", options=row_options)
+
+    # 実際のheaderに使う0-based index
+    header_row = selected_row_display - 1
+
 
 # **処理開始**
 if st.button("処理を開始"):
@@ -91,6 +100,7 @@ if st.button("処理を開始"):
 
         st.subheader("📌 筆ポリゴンと農地ピンの結合結果（上位5件）")
         st.write(result.head())
+        
 
         # **住所カラムの確認**
         possible_address_columns = ["住所", "Address", "address", "location", "name"]
@@ -117,6 +127,19 @@ if st.button("処理を開始"):
                 st.subheader("📌 圃場登録代行シートのデータ（上位5件）")
                 st.write(df_excel.head())
 
+                # **Excelファイルをダウンロード**
+                output_buffer = BytesIO()
+                with pd.ExcelWriter(output_buffer, engine="xlsxwriter") as writer:
+                    df_excel.to_excel(writer, sheet_name="MatchedData", index=False)
+                output_buffer.seek(0)
+
+                st.download_button(
+                    label="📥 更新済みExcelをダウンロード",
+                    data=output_buffer,
+                    file_name=f"結合圃場.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                )
+                
                 current_step += 1
                 progress_bar.progress(current_step / total_steps)
                 time.sleep(0.5)
@@ -172,6 +195,11 @@ if st.button("処理を開始"):
                 time.sleep(0.5)
                 status_text.text("処理完了")
                 
+                matched_count = (df_excel["geometry"] != "一致なし").sum()
+                total_count = len(df_excel)
+                st.info(f"一致件数: {matched_count} / {total_count} （一致率: {matched_count / total_count:.1%}）")
+
+
                 # **Excelファイルをダウンロード**
                 output_buffer = BytesIO()
                 with pd.ExcelWriter(output_buffer, engine="xlsxwriter") as writer:
