@@ -55,10 +55,10 @@ if uploaded_excel_file and sheet_name:
     st.write(preview_df)
 
     row_options = list(range(1, len(preview_df)))
-    selected_row_display = st.selectbox("カラム名がある行番号を選んでください（1行目から）", options=row_options)
+    selected_row_display = st.selectbox("カラム名がある行番号を選んでください", options=row_options)
 
     # 実際のheaderに使う0-based index
-    header_row = selected_row_display - 1
+    header_row = selected_row_display
 
 
 # **処理開始**
