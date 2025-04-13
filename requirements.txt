@@ -19,3 +19,4 @@ streamlit-aggrid
 streamlit-folium
 xlsxwriter
 xmltodict
+st-aggrid
