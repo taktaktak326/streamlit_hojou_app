@@ -212,7 +212,7 @@ def get_user_inputs(field_data):
     
         # ラベル表示項目の選択
         label_options = {
-            "圃場名": "name",
+            "圃場名": "field_name",
             "品種": "variety",
             "作付日": "date"
         }
