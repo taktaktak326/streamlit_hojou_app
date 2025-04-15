@@ -1,21 +1,17 @@
 import streamlit as st
 st.set_page_config(page_title="xarvio BBCH Viewer", layout="wide")
 import plotly.graph_objects as go
-from shapely.geometry import Polygon
 import tempfile
 import base64
 import requests
 import urllib.parse
 import pandas as pd
-from datetime import datetime
 import json
 from shapely.geometry import shape, MultiPolygon, Polygon
 from geopy.geocoders import Nominatim
 from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode
 from xml.etree.ElementTree import Element, SubElement, tostring
 import xml.dom.minidom
-import hashlib
-import random
 from datetime import datetime, timezone, timedelta
 import plotly.express as px
 import time 
@@ -98,14 +94,18 @@ def plot_bbch_stacked_bar(df):
     # ✅ 🌾 表示する作物のラジオボタンを追加
     crop_options = sorted(df["作物"].dropna().unique(), reverse=True)
     selected_crop = st.radio("🌾 表示する作物を選択", options=crop_options, horizontal=True)
+    unique_stages = df[df["作物"] == selected_crop][["BBCHコード", "BBCH名称"]].dropna().drop_duplicates()
 
     # ✅ BBCHステージのラジオボタン（元の df_filtered で取得）
-    unique_stages = df[df["作物"] == selected_crop]["BBCHステージ"].dropna().unique()
-    if len(unique_stages) == 0:
-        st.warning("BBCHステージのデータがありません。")
-        return
-    
-    selected_stage = st.radio("表示するBBCHステージを選んでください", sorted(unique_stages), horizontal=True)
+    unique_stages["BBCHコードソート"] = unique_stages["BBCHコード"].astype(int)
+    unique_stages = unique_stages.sort_values("BBCHコードソート")
+
+    # 表示用に整形（例: "13 (3葉期)"）
+    unique_stages["ラベル"] = unique_stages["BBCHコード"].astype(str) + " (" + unique_stages["BBCH名称"] + ")"
+
+    # ラジオボタンに渡す
+    selected_stage = st.radio("表示するBBCHステージを選んでください", unique_stages["ラベル"].tolist(), horizontal=True)
+
 
     filtered_df = df[(df["作物"] == selected_crop) & (df["BBCHステージ"] == selected_stage)].copy()
 
@@ -130,12 +130,13 @@ def plot_bbch_stacked_bar(df):
     date_counts = filtered_df.groupby(group_cols).size().reset_index(name="カウント")
     
     # ✅ 日付順にソートしてカテゴリ型に変換（順番を固定）
-    date_counts = date_counts.sort_values("BBCH開始日")
+    sorted_dates = sorted(date_counts["BBCH開始日"].unique())
     date_counts["BBCH開始日"] = pd.Categorical(
         date_counts["BBCH開始日"],
-        categories=sorted(date_counts["BBCH開始日"].unique()),
+        categories=sorted_dates,
         ordered=True
     )
+
 
     # ⑤ グラフ作成
     fig = px.bar(
@@ -160,8 +161,12 @@ def plot_bbch_stacked_bar(df):
         barmode="stack",
         bargap=0.1
     )
-    fig.update_xaxes(type="category")  
-    fig.update_xaxes(tickangle=45)   
+    fig.update_xaxes(
+    type="category",  # ← 明示的にカテゴリ扱い
+    categoryorder="array",
+    categoryarray=sorted_dates,  # ← 並び順指定
+    tickangle=45
+    )
 
     # グラフ表示
     st.plotly_chart(fig, use_container_width=True)
@@ -212,7 +217,7 @@ def get_user_inputs(field_data):
     
         # ラベル表示項目の選択
         label_options = {
-            "圃場名": "field_name",
+            "圃場名": "name",
             "品種": "variety",
             "作付日": "date"
         }
@@ -227,7 +232,7 @@ def generate_map_title(prefix, bbch):
     else:
         return f"圃場マップ BBCH{bbch}"
 
-def create_field_map(field_data, selected_bbch, map_style, map_title, label_key):
+def create_field_map(field_data, selected_bbch, map_style, map_title, label_key, center_override=None, zoom_override=None):
     """Plotly地図の生成"""
     filtered_data = [f for f in field_data if f.get("BBCHコード") == selected_bbch]
     fig = go.Figure()
@@ -263,6 +268,16 @@ def create_field_map(field_data, selected_bbch, map_style, map_title, label_key)
 
         centroid = poly.centroid
         lat, lon = centroid.y, centroid.x
+        # 🔴 赤いピンマークを追加（圃場の中心に）
+        fig.add_trace(go.Scattermapbox(
+            lat=[lat], lon=[lon],
+            mode="markers",
+            marker=dict(size=10, color="red", symbol="circle"),  # ← ここが目立つポイント
+            name=field["name"],
+            hoverinfo="skip",
+            showlegend=False
+        ))
+
         gmap_url = f"https://www.google.com/maps/dir/?api=1&destination={lat},{lon}"
         hover_html = (
             f"<b>{field['name']}</b><br>"
@@ -342,8 +357,8 @@ def create_field_map(field_data, selected_bbch, map_style, map_title, label_key)
     fig.update_layout(
         title={"text": map_title, "x": 0.5, "xanchor": "center", "font": dict(size=20, color="black")},
         mapbox_style=map_style,
-        mapbox_zoom=map_zoom,               # ← 動的に設定した値を使用
-        mapbox_center=map_center,           # ← 動的に計算された中心座標を使用
+        mapbox_zoom=zoom_override if zoom_override else map_zoom,
+        mapbox_center=center_override if center_override else map_center,
         height=800, 
         margin={"r": 0, "t": 60, "l": 0, "b": 0},
         legend=dict(orientation="v", x=1.02, y=1.0, xanchor="left", yanchor="top", bordercolor="gray", borderwidth=1)
@@ -982,8 +997,32 @@ with tab1:
 
                     st.markdown(f"### 📌 現在の表示: {map_title}")
 
+                    # 圃場名でソートして選択肢を作る
+                    field_options = {
+                        row["圃場名"]: row["中心座標"]
+                        for row in sorted(
+                            bbch_df.dropna(subset=["中心座標"]).to_dict(orient="records"),
+                            key=lambda x: x["圃場名"]
+                        )
+                    }
+
+                    # UIの選択ボックス
+                    selected_jump_field = st.selectbox("📍 地図をズーム表示したい圃場を選んでください", options=list(field_options.keys()))
+
+                    # 選択された圃場の中心座標を取得
+                    jump_lat, jump_lon = extract_lat_lon(field_options[selected_jump_field])
+
+
                     # 地図生成・表示
-                    fig = create_field_map(bbch_records, selected_bbch, selected_map_style, map_title, selected_label)
+                    fig = create_field_map(
+                        field_data=bbch_records,
+                        selected_bbch=selected_bbch,
+                        map_style=selected_map_style,
+                        map_title=map_title,
+                        label_key=selected_label,
+                        center_override={"lat": jump_lat, "lon": jump_lon},
+                        zoom_override=14  # 適度にズームイン
+                    )
                     st.plotly_chart(fig, use_container_width=True, 
                             #    config={"scrollZoom": True, "displayModeBar": False})
                                 config={
