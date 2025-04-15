@@ -209,7 +209,12 @@ def get_user_inputs(field_data):
         selected_map_style = map_style_label_to_value[selected_style_label]
 
 
-        all_bbch = sorted(set(f["BBCHコード"] for f in field_data if "BBCHコード" in f))
+        # 文字列 → 数値 → ソート → 文字列に戻す
+        all_bbch = sorted(
+            {int(f["BBCHコード"]) for f in field_data if "BBCHコード" in f and str(f["BBCHコード"]).isdigit()}
+        )
+        all_bbch = [str(code) for code in all_bbch]
+
         selected_bbch = st.radio("BBCHステージを選択", options=all_bbch, index=0, horizontal=True)
 
         if selected_bbch:
@@ -284,20 +289,25 @@ def create_field_map(field_data, selected_bbch, map_style, map_title, label_key,
             f"作物: {field.get('作物', '不明')}<br>"
             f"品種: {field['variety']}<br>"
             f"作付方法: {field.get('作付方法', '')}<br>"
+            f"<a href='{gmap_url}' target='_blank'>📍Googleマップ</a><br>"
             f"面積: {field.get('面積 (a)', '')} a<br>"
             f"作付日: {field['date']}<br>"
             f"BBCH: {field.get('BBCHコード', '')}（{field.get('BBCH名称', '')}）<br>"
-            f"<a href='{gmap_url}' target='_blank'>📍Googleマップ</a>"
+            
         )
 
         fig.add_trace(go.Scattermapbox(
-            lat=[lat], lon=[lon],
+            lat=[lat],
+            lon=[lon],
             mode="markers",
-            marker=dict(size=10, color="rgba(0,0,0,0)"),
-            hoverinfo="text", hovertext=hover_html,
-            showlegend=False, legendgroup=date
+            marker=dict(
+                size=30,                # ← 大きくすることで hover しやすくなる
+                color="rgba(0,0,0,0)"   # ← 完全に透明
+            ),
+            hoverinfo="text",
+            hovertext=hover_html,
+            showlegend=False
         ))
-
         label_text = str(field.get(label_key, ""))
         fig.add_trace(go.Scattermapbox(
             lat=[lat], lon=[lon],
