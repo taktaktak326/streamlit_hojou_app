@@ -12,7 +12,7 @@ pyshp==2.3.1
 pyvirtualdisplay
 requests==2.31.0
 rtree==1.0.1
-selenium==.30.0
+selenium==4.30.0
 shapely==2.0.4
 streamlit==1.41.1
 streamlit-aggrid==1.1.2
