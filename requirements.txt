@@ -15,8 +15,7 @@ rtree
 selenium
 shapely
 streamlit
-
+streamlit-aggrid==1.1.2
 streamlit-folium
 xlsxwriter
 xmltodict
-st-aggrid
