@@ -19,4 +19,5 @@ streamlit-aggrid==1.1.2
 streamlit-folium==0.24.0
 xlsxwriter==3.2.2
 xmltodict
-numpy==1.23.5
+numpy==1.26.4
+
