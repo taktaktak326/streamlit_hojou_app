@@ -1,27 +1,75 @@
 import streamlit as st
 st.set_page_config(page_title="xarvio BBCH Viewer", layout="wide")
 import plotly.graph_objects as go
-from shapely.geometry import Polygon
 import tempfile
 import base64
 import requests
 import urllib.parse
 import pandas as pd
-from datetime import datetime
 import json
 from shapely.geometry import shape, MultiPolygon, Polygon
 from geopy.geocoders import Nominatim
 from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode
 from xml.etree.ElementTree import Element, SubElement, tostring
 import xml.dom.minidom
-import hashlib
-import random
 from datetime import datetime, timezone, timedelta
 import plotly.express as px
 import time 
+from geopy.distance import geodesic
 
 # カラーマッピング用
 date_color_map = {}
+
+
+def extract_lat_lon(coord_str):
+    try:
+        lon, lat = map(float, coord_str.split(","))
+        return lat, lon
+    except:
+        return None, None
+
+def create_efficient_route(bbch_df, bbch_code):
+    filtered_df = bbch_df[bbch_df["BBCHコード"] == bbch_code].dropna(subset=["中心座標"])
+    
+    # 圃場ごとの座標を抽出
+    points = []
+    for _, row in filtered_df.iterrows():
+        lat, lon = extract_lat_lon(row["中心座標"])
+        if lat and lon:
+            points.append({
+                "name": row["圃場名"],
+                "lat": lat,
+                "lon": lon
+            })
+
+    if not points:
+        return None, []
+
+    # Greedy法：現在位置に最も近い順に巡回
+    start = points[0]
+    route = [start]
+    remaining = points[1:]
+
+    while remaining:
+        last = route[-1]
+        next_point = min(remaining, key=lambda p: geodesic((last["lat"], last["lon"]), (p["lat"], p["lon"])).km)
+        route.append(next_point)
+        remaining.remove(next_point)
+
+    return route[0], route  # 最初の圃場, 巡回順
+
+def generate_google_maps_route(route):
+    if len(route) < 2:
+        return None
+    max_waypoints = 23
+    trimmed_route = route[:max_waypoints]
+
+    origin = "My+Location"
+    destination = "My+Location"
+    waypoints = "|".join([f'{pt["lat"]},{pt["lon"]}' for pt in trimmed_route])
+
+    return f"https://www.google.com/maps/dir/?api=1&origin={origin}&destination={destination}&waypoints={waypoints}"
+
 
 def plot_bbch_stacked_bar(df):
     """BBCH開始日の積立棒グラフ（x軸はカテゴリ型で日別に明示的に分離）"""
@@ -46,14 +94,18 @@ def plot_bbch_stacked_bar(df):
     # ✅ 🌾 表示する作物のラジオボタンを追加
     crop_options = sorted(df["作物"].dropna().unique(), reverse=True)
     selected_crop = st.radio("🌾 表示する作物を選択", options=crop_options, horizontal=True)
+    unique_stages = df[df["作物"] == selected_crop][["BBCHコード", "BBCH名称"]].dropna().drop_duplicates()
 
     # ✅ BBCHステージのラジオボタン（元の df_filtered で取得）
-    unique_stages = df[df["作物"] == selected_crop]["BBCHステージ"].dropna().unique()
-    if len(unique_stages) == 0:
-        st.warning("BBCHステージのデータがありません。")
-        return
-    
-    selected_stage = st.radio("表示するBBCHステージを選んでください", sorted(unique_stages), horizontal=True)
+    unique_stages["BBCHコードソート"] = unique_stages["BBCHコード"].astype(int)
+    unique_stages = unique_stages.sort_values("BBCHコードソート")
+
+    # 表示用に整形（例: "13 (3葉期)"）
+    unique_stages["ラベル"] = unique_stages["BBCHコード"].astype(str) + " (" + unique_stages["BBCH名称"] + ")"
+
+    # ラジオボタンに渡す
+    selected_stage = st.radio("表示するBBCHステージを選んでください", unique_stages["ラベル"].tolist(), horizontal=True)
+
 
     filtered_df = df[(df["作物"] == selected_crop) & (df["BBCHステージ"] == selected_stage)].copy()
 
@@ -78,12 +130,13 @@ def plot_bbch_stacked_bar(df):
     date_counts = filtered_df.groupby(group_cols).size().reset_index(name="カウント")
     
     # ✅ 日付順にソートしてカテゴリ型に変換（順番を固定）
-    date_counts = date_counts.sort_values("BBCH開始日")
+    sorted_dates = sorted(date_counts["BBCH開始日"].unique())
     date_counts["BBCH開始日"] = pd.Categorical(
         date_counts["BBCH開始日"],
-        categories=sorted(date_counts["BBCH開始日"].unique()),
+        categories=sorted_dates,
         ordered=True
     )
+
 
     # ⑤ グラフ作成
     fig = px.bar(
@@ -108,8 +161,12 @@ def plot_bbch_stacked_bar(df):
         barmode="stack",
         bargap=0.1
     )
-    fig.update_xaxes(type="category")  
-    fig.update_xaxes(tickangle=45)   
+    fig.update_xaxes(
+    type="category",  # ← 明示的にカテゴリ扱い
+    categoryorder="array",
+    categoryarray=sorted_dates,  # ← 並び順指定
+    tickangle=45
+    )
 
     # グラフ表示
     st.plotly_chart(fig, use_container_width=True)
@@ -118,7 +175,7 @@ def plot_bbch_stacked_bar(df):
     
 @st.cache_data(show_spinner=False)
 def reverse_geocode(lat, lon):
-    st.session_state["api_call_count"] += 1
+    #st.write(f"📍 reverse_geocode called: {lat}, {lon}")
     geolocator = Nominatim(user_agent="xarvio-app")
     location = geolocator.reverse((lat, lon), language="ja")
     return location.raw.get("address", {})
@@ -152,9 +209,17 @@ def get_user_inputs(field_data):
         selected_map_style = map_style_label_to_value[selected_style_label]
 
 
-        all_bbch = sorted(set(f["BBCHコード"] for f in field_data if "BBCHコード" in f))
+        # 文字列 → 数値 → ソート → 文字列に戻す
+        all_bbch = sorted(
+            {int(f["BBCHコード"]) for f in field_data if "BBCHコード" in f and str(f["BBCHコード"]).isdigit()}
+        )
+        all_bbch = [str(code) for code in all_bbch]
+
         selected_bbch = st.radio("BBCHステージを選択", options=all_bbch, index=0, horizontal=True)
 
+        if selected_bbch:
+            st.caption(f"📘 {selected_bbch}：{bbch_df[bbch_df['BBCHコード'] == selected_bbch]['BBCH名称'].iloc[0]}")
+    
         # ラベル表示項目の選択
         label_options = {
             "圃場名": "name",
@@ -172,7 +237,7 @@ def generate_map_title(prefix, bbch):
     else:
         return f"圃場マップ BBCH{bbch}"
 
-def create_field_map(field_data, selected_bbch, map_style, map_title, label_key):
+def create_field_map(field_data, selected_bbch, map_style, map_title, label_key, center_override=None, zoom_override=None):
     """Plotly地図の生成"""
     filtered_data = [f for f in field_data if f.get("BBCHコード") == selected_bbch]
     fig = go.Figure()
@@ -208,26 +273,41 @@ def create_field_map(field_data, selected_bbch, map_style, map_title, label_key)
 
         centroid = poly.centroid
         lat, lon = centroid.y, centroid.x
+        # 🔴 赤いピンマークを追加（圃場の中心に）
+        fig.add_trace(go.Scattermapbox(
+            lat=[lat], lon=[lon],
+            mode="markers",
+            marker=dict(size=10, color="red", symbol="circle"),  # ← ここが目立つポイント
+            name=field["name"],
+            hoverinfo="skip",
+            showlegend=False
+        ))
+
         gmap_url = f"https://www.google.com/maps/dir/?api=1&destination={lat},{lon}"
         hover_html = (
             f"<b>{field['name']}</b><br>"
             f"作物: {field.get('作物', '不明')}<br>"
             f"品種: {field['variety']}<br>"
             f"作付方法: {field.get('作付方法', '')}<br>"
+            f"<a href='{gmap_url}' target='_blank'>📍Googleマップ</a><br>"
             f"面積: {field.get('面積 (a)', '')} a<br>"
             f"作付日: {field['date']}<br>"
             f"BBCH: {field.get('BBCHコード', '')}（{field.get('BBCH名称', '')}）<br>"
-            f"<a href='{gmap_url}' target='_blank'>📍Googleマップ</a>"
+            
         )
 
         fig.add_trace(go.Scattermapbox(
-            lat=[lat], lon=[lon],
+            lat=[lat],
+            lon=[lon],
             mode="markers",
-            marker=dict(size=10, color="rgba(0,0,0,0)"),
-            hoverinfo="text", hovertext=hover_html,
-            showlegend=False, legendgroup=date
+            marker=dict(
+                size=30,                # ← 大きくすることで hover しやすくなる
+                color="rgba(0,0,0,0)"   # ← 完全に透明
+            ),
+            hoverinfo="text",
+            hovertext=hover_html,
+            showlegend=False
         ))
-
         label_text = str(field.get(label_key, ""))
         fig.add_trace(go.Scattermapbox(
             lat=[lat], lon=[lon],
@@ -287,8 +367,8 @@ def create_field_map(field_data, selected_bbch, map_style, map_title, label_key)
     fig.update_layout(
         title={"text": map_title, "x": 0.5, "xanchor": "center", "font": dict(size=20, color="black")},
         mapbox_style=map_style,
-        mapbox_zoom=map_zoom,               # ← 動的に設定した値を使用
-        mapbox_center=map_center,           # ← 動的に計算された中心座標を使用
+        mapbox_zoom=zoom_override if zoom_override else map_zoom,
+        mapbox_center=center_override if center_override else map_center,
         height=800, 
         margin={"r": 0, "t": 60, "l": 0, "b": 0},
         legend=dict(orientation="v", x=1.02, y=1.0, xanchor="left", yanchor="top", bordercolor="gray", borderwidth=1)
@@ -659,11 +739,11 @@ def extract_bbch_data(fields, selected_field_uuids, geolocator):
                 centroid = polygon.centroid
                 centroid_lat, centroid_lon = round(centroid.y, 6), round(centroid.x, 6)
 
-                # 🔁 キャッシュ済みジオコーディングで高速化
-                address = reverse_geocode(centroid_lat, centroid_lon)
-                iso = address.get("ISO3166-2-lvl4") or address.get("ISO3166-2-lvl3")
-                prefecture = ISO_TO_PREF_NAME.get(iso, "")
-                city = address.get("city", address.get("town", address.get("village", "")))
+                if use_reverse_geocode:
+                    address = reverse_geocode(centroid_lat, centroid_lon)
+                    iso = address.get("ISO3166-2-lvl4") or address.get("ISO3166-2-lvl3")
+                    prefecture = ISO_TO_PREF_NAME.get(iso, "")
+                    city = address.get("city", address.get("town", address.get("village", "")))
         except:
             pass
 
@@ -747,6 +827,8 @@ with tab1:
                     st.session_state.farms_data = farms
                     st.session_state.is_logged_in = True
                     st.rerun()
+                else:
+                    st.warning("⚠️ メールアドレスかパスワードが正しくありません。")
 
     # --- ログイン後処理 ---
     if st.session_state.is_logged_in:
@@ -818,6 +900,7 @@ with tab1:
 
                 if selected_rows is None or len(selected_rows) == 0:
                     st.warning("⚠ 圃場を1つ以上選択してください")
+                    st.stop()
                 else:
                     if isinstance(selected_rows, pd.DataFrame):
                         selected_rows = selected_rows.to_dict(orient="records")
@@ -925,8 +1008,32 @@ with tab1:
 
                     st.markdown(f"### 📌 現在の表示: {map_title}")
 
+                    # 圃場名でソートして選択肢を作る
+                    field_options = {
+                        row["圃場名"]: row["中心座標"]
+                        for row in sorted(
+                            bbch_df.dropna(subset=["中心座標"]).to_dict(orient="records"),
+                            key=lambda x: x["圃場名"]
+                        )
+                    }
+
+                    # UIの選択ボックス
+                    selected_jump_field = st.selectbox("📍 地図をズーム表示したい圃場を選んでください", options=list(field_options.keys()))
+
+                    # 選択された圃場の中心座標を取得
+                    jump_lat, jump_lon = extract_lat_lon(field_options[selected_jump_field])
+
+
                     # 地図生成・表示
-                    fig = create_field_map(bbch_records, selected_bbch, selected_map_style, map_title, selected_label)
+                    fig = create_field_map(
+                        field_data=bbch_records,
+                        selected_bbch=selected_bbch,
+                        map_style=selected_map_style,
+                        map_title=map_title,
+                        label_key=selected_label,
+                        center_override={"lat": jump_lat, "lon": jump_lon},
+                        zoom_override=14  # 適度にズームイン
+                    )
                     st.plotly_chart(fig, use_container_width=True, 
                             #    config={"scrollZoom": True, "displayModeBar": False})
                                 config={
@@ -968,3 +1075,74 @@ with tab1:
                                 mime="application/vnd.google-earth.kml+xml",
                                 key=f"kml_download_{code}"
                             )
+                with st.expander("🚗 BBCH圃場のおすすめ巡回ルートを表示", expanded=False):
+                    if "bbch_df" in st.session_state:
+                        bbch_df = st.session_state.bbch_df
+
+                        # ① BBCHコードを選択
+                        bbch_codes = sorted(
+                            bbch_df["BBCHコード"].dropna().unique(),
+                            key=lambda x: int(x) if str(x).isdigit() else x
+                        )
+                        selected_bbch_code = st.selectbox("① 対象のBBCHコードを選んでください", bbch_codes)
+
+                        # ② 選択されたBBCHコードに対応する開始日を「複数選択」
+                        bbch_dates = sorted(
+                            bbch_df[bbch_df["BBCHコード"] == selected_bbch_code]["BBCH開始日"].dropna().unique(),
+                            key=lambda x: pd.to_datetime(x)
+                        )
+                        selected_dates = st.multiselect("② 該当BBCHステージの開始日を選んでください（複数選択可）", bbch_dates, default=bbch_dates)
+
+                        # ③ BBCH + 選択された日付に該当する圃場のみ抽出
+                        filtered_df = bbch_df[
+                            (bbch_df["BBCHコード"] == selected_bbch_code) &
+                            (bbch_df["BBCH開始日"].isin(selected_dates))
+                        ].dropna(subset=["中心座標"])
+
+                        field_names = sorted(filtered_df["圃場名"].dropna().unique())
+                        selected_fields = st.multiselect("③ 巡回対象とする圃場を選んでください", options=field_names, default=field_names)
+
+                        # ④ Googleマップの上限（23件）制限
+                        if len(selected_fields) > 23:
+                            st.warning("⚠️ Googleマップの仕様により、選択できる圃場は最大23個までです。")
+                            selected_fields = selected_fields[:23]
+
+                        # ⑤ 巡回ルート生成
+                        if selected_fields:
+                            selected_df = filtered_df[filtered_df["圃場名"].isin(selected_fields)]
+                            route_input = []
+                            for _, row in selected_df.iterrows():
+                                lat, lon = extract_lat_lon(row["中心座標"])
+                                if lat and lon:
+                                    route_input.append({
+                                        "name": row["圃場名"],
+                                        "lat": lat,
+                                        "lon": lon
+                                    })
+
+                            if len(route_input) >= 2:
+                                # Greedyなルート作成
+                                start = route_input[0]
+                                route = [start]
+                                unvisited = route_input[1:]
+
+                                while unvisited:
+                                    last = route[-1]
+                                    next_point = min(unvisited, key=lambda p: geodesic((last["lat"], last["lon"]), (p["lat"], p["lon"])).km)
+                                    route.append(next_point)
+                                    unvisited.remove(next_point)
+
+                                # Googleマップ用のURL（現在地スタート・戻る）
+                                gmap_url = generate_google_maps_route(route)
+
+                                st.markdown("### 🧭 巡回ルート（Googleマップ）")
+                                st.markdown(f"[📍 道順を表示する]({gmap_url})", unsafe_allow_html=True)
+
+                                st.markdown("#### 🔍 巡回順の圃場一覧")
+                                for i, pt in enumerate(route, start=1):
+                                    st.markdown(f"{i}. **{pt['name']}**（{pt['lat']:.5f}, {pt['lon']:.5f}）")
+                            else:
+                                st.warning("⚠️ 2つ以上の圃場を選択してください。")
+
+
+
