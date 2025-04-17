@@ -13,9 +13,10 @@ pyvirtualdisplay
 requests==2.31.0
 rtree==1.0.1
 selenium==4.30.0
-shapely==2.0.4
+shapely==2.0.1
 streamlit==1.41.1
 streamlit-aggrid==1.1.2
 streamlit-folium==0.24.0
 xlsxwriter==3.2.2
 xmltodict
+numpy==1.23.5
