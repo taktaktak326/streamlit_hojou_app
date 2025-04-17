@@ -900,6 +900,7 @@ with tab1:
 
                 if selected_rows is None or len(selected_rows) == 0:
                     st.warning("⚠ 圃場を1つ以上選択してください")
+                    st.stop()
                 else:
                     if isinstance(selected_rows, pd.DataFrame):
                         selected_rows = selected_rows.to_dict(orient="records")
@@ -1142,6 +1143,3 @@ with tab1:
                                     st.markdown(f"{i}. **{pt['name']}**（{pt['lat']:.5f}, {pt['lon']:.5f}）")
                             else:
                                 st.warning("⚠️ 2つ以上の圃場を選択してください。")
-
-
-
