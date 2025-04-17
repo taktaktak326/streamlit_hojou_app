@@ -892,14 +892,15 @@ with tab1:
             grid_options = gb.build()
 
             with st.form("select_fields"):
-                grid_response = AgGrid(df, gridOptions=grid_options, update_mode=GridUpdateMode.SELECTION_CHANGED)
+#                grid_response = AgGrid(df, gridOptions=grid_options, update_mode=GridUpdateMode.SELECTION_CHANGED)
+                grid_response = AgGrid(df, gridOptions=grid_options, update_mode=GridUpdateMode.MODEL_CHANGED)
+
                 submit = st.form_submit_button("🎯 BBCH取得")
 
             if submit:
-                selected_rows = grid_response["selected_rows"]
-
-                if selected_rows is None or len(selected_rows) == 0:
-                    st.warning("⚠ 圃場を1つ以上選択してください")
+                selected_rows = grid_response.selected_rows
+                if not selected_rows:
+                    st.warning("⚠ 圃場を1つ以上選択してください。")
                     st.stop()
                 else:
                     if isinstance(selected_rows, pd.DataFrame):
