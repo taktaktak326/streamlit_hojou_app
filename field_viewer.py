@@ -894,7 +894,24 @@ with tab1:
             with st.form("select_fields"):
                 grid_response = AgGrid(df, gridOptions=grid_options, update_mode=GridUpdateMode.SELECTION_CHANGED)
                 submit = st.form_submit_button("🎯 BBCH取得")
+            # 🔥 ここでデバッグ表示！
+            st.subheader("🛠️ デバッグ用情報 (AgGridの出力)")
+            st.json(grid_response)  # AgGridの出力をそのまま見る
+            selected_rows = grid_response.get("selected_rows", [])
+            st.json(selected_rows)  # 選ばれた行だけ取り出して見る
 
+            # AgGridの結果をデバッグ表示する----------
+            st.subheader("🛠️ デバッグ用情報")
+            st.write("grid_response 全体:", grid_response)
+            selected_rows = grid_response.get("selected_rows", [])
+            
+            st.write("選択された行 (selected_rows):", selected_rows)
+            
+            if not selected_rows:
+                st.warning("⚠ 圃場を1つ以上選択してください。")
+                st.stop()
+                #-----------------------------
+                            
             if submit:
                 selected_rows = grid_response["selected_rows"]
 
@@ -1143,3 +1160,6 @@ with tab1:
                                     st.markdown(f"{i}. **{pt['name']}**（{pt['lat']:.5f}, {pt['lon']:.5f}）")
                             else:
                                 st.warning("⚠️ 2つ以上の圃場を選択してください。")
+
+
+
