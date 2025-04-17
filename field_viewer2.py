@@ -899,7 +899,7 @@ with tab1:
 
             if submit:
                 selected_rows = grid_response.selected_rows
-                if not selected_rows:
+                if selected_rows is None or selected_rows.empty:
                     st.warning("⚠ 圃場を1つ以上選択してください。")
                     st.stop()
                 else:
