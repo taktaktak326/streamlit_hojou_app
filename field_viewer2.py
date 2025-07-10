@@ -643,6 +643,7 @@ def build_field_dataframe(fields, geolocator):
 
             field_data.append({
                 "Field UUID": field_uuid,
+                "農場名": field.get("farmName", "不明な農場"),
                 "圃場名": field_name,
                 "作物": crop,
                 "品種": variety,
@@ -659,65 +660,83 @@ def build_field_dataframe(fields, geolocator):
     return field_data
 
 def fetch_fields_for_multiple_farms(farm_uuids, login_token, api_token):
-    st.session_state["graphql_api_call_count"] += 1  # ←追加
-    query = {
-        "operationName": "CombinedFieldData",
-        "variables": {
-            "farmUuids": farm_uuids,
-            "languageCode": "ja",
-            "cropSeasonLifeCycleStates": ["ACTIVE", "PLANNED"],
-            "withBoundarySvg": True
-        },
-        "query": """
-            query CombinedFieldData(
-              $farmUuids: [UUID!]!, 
-              $languageCode: String!, 
-              $cropSeasonLifeCycleStates: [LifecycleState]!, 
-              $withBoundarySvg: Boolean!
-            ) {
-              fieldsV2(farmUuids: $farmUuids) {
-                uuid
-                name
-                area
-                boundary
-                boundarySvg @include(if: $withBoundarySvg)
-                cropSeasonsV2(lifecycleState: $cropSeasonLifeCycleStates) {
-                  uuid
-                  startDate
-                  crop(languageCode: $languageCode) {
+    st.session_state["graphql_api_call_count"] += 1
+
+    all_fields = []
+    for farm_uuid in farm_uuids:
+        query = {
+            "operationName": "CombinedFieldData",
+            "variables": {
+                "farmUuids": [farm_uuid],
+                "languageCode": "ja",
+                "cropSeasonLifeCycleStates": ["ACTIVE", "PLANNED"],
+                "withBoundarySvg": True
+            },
+            "query": """
+                query CombinedFieldData(
+                  $farmUuids: [UUID!]!, 
+                  $languageCode: String!, 
+                  $cropSeasonLifeCycleStates: [LifecycleState]!, 
+                  $withBoundarySvg: Boolean!
+                ) {
+                  farms: farmsV2(uuids: $farmUuids) {
+                    uuid
                     name
                   }
-                  variety(languageCode: $languageCode) {
+                  fieldsV2(farmUuids: $farmUuids) {
+                    uuid
                     name
-                  }
-                  cropEstablishmentGrowthStageIndex
-                  cropEstablishmentMethodCode
-                  countryCropGrowthStagePredictions {
-                    index
-                    startDate
-                    endDate
-                    scale
-                    gsOrder
-                    cropGrowthStageV2(languageCode: $languageCode) {
+                    area
+                    boundary
+                    boundarySvg @include(if: $withBoundarySvg)
+                    cropSeasonsV2(lifecycleState: $cropSeasonLifeCycleStates) {
                       uuid
-                      name
-                      code
+                      startDate
+                      crop(languageCode: $languageCode) {
+                        name
+                      }
+                      variety(languageCode: $languageCode) {
+                        name
+                      }
+                      cropEstablishmentGrowthStageIndex
+                      cropEstablishmentMethodCode
+                      countryCropGrowthStagePredictions {
+                        index
+                        startDate
+                        endDate
+                        scale
+                        gsOrder
+                        cropGrowthStageV2(languageCode: $languageCode) {
+                          uuid
+                          name
+                          code
+                        }
+                      }
                     }
                   }
                 }
-              }
-            }
-        """
-    }
+            """
+        }
 
-    headers = {
-        "Content-Type": "application/json",
-        "Cookie": f"LOGIN_TOKEN={login_token}; DF_TOKEN={api_token}"
-    }
+        headers = {
+            "Content-Type": "application/json",
+            "Cookie": f"LOGIN_TOKEN={login_token}; DF_TOKEN={api_token}"
+        }
 
-    response = requests.post(GRAPHQL_END_POINT, json=query, headers=headers)
-    response.raise_for_status()
-    return response.json()["data"]["fieldsV2"]
+        response = requests.post(GRAPHQL_END_POINT, json=query, headers=headers)
+        response.raise_for_status()
+        data = response.json()["data"]
+
+        farm_name = data["farms"][0]["name"] if data["farms"] else "不明な農場"
+        fields = data["fieldsV2"]
+
+        # 各圃場に農場名を付与
+        for field in fields:
+            field["farmName"] = farm_name
+
+        all_fields.extend(fields)
+
+    return all_fields
 
 
 def extract_bbch_data(fields, selected_field_uuids, geolocator):
@@ -726,6 +745,7 @@ def extract_bbch_data(fields, selected_field_uuids, geolocator):
         if field.get("uuid") not in selected_field_uuids:
             continue
 
+        farm_name = field.get("farmName", "不明な農場")
         field_name = field.get("name", "不明な圃場名")
         area = round(field.get("area", 0) * 0.01, 2)
         boundary = field.get("boundary", {})
@@ -774,6 +794,7 @@ def extract_bbch_data(fields, selected_field_uuids, geolocator):
                     pass
                 
                 bbch_data.append({
+                    "農場名": farm_name,
                     "圃場名": field_name,
                     "作物": crop_name,
                     "作付UUID": cs_uuid,
@@ -950,7 +971,7 @@ with tab1:
                 bbch_df = st.session_state.bbch_df
 
                 pivot_index_cols = [
-                    "圃場名", "作物", "作付UUID", "品種", "作付方法",
+                    "農場名", "圃場名", "作物", "作付UUID", "品種", "作付方法",
                     "作付時のBBCH", "作付日", "面積 (a)",
                     "都道府県", "市区町村", "中心座標" #, "ポリゴン情報"
                 ]
@@ -1144,6 +1165,3 @@ with tab1:
                                     st.markdown(f"{i}. **{pt['name']}**（{pt['lat']:.5f}, {pt['lon']:.5f}）")
                             else:
                                 st.warning("⚠️ 2つ以上の圃場を選択してください。")
-
-
-
