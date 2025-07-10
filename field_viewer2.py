@@ -73,7 +73,7 @@ def generate_google_maps_route(route):
 
 def plot_bbch_stacked_bar(df):
     """BBCH開始日の積立棒グラフ（x軸はカテゴリ型で日別に明示的に分離）"""
-    required_columns = ["BBCH開始日", "市区町村", "BBCHステージ", "BBCHコード", "作物", "品種", "圃場名"]
+    required_columns = ["BBCH開始日", "市区町村", "BBCHステージ", "BBCHコード", "作物", "品種", "圃場名", "農場名"]
     if not all(col in df.columns for col in required_columns):
         st.warning("必要なカラム（BBCH開始日、BBCHステージ、作物など）が不足しています。")
         return
@@ -109,6 +109,9 @@ def plot_bbch_stacked_bar(df):
 
     filtered_df = df[(df["作物"] == selected_crop) & (df["BBCHステージ"] == selected_stage)].copy()
 
+    # 圃場名（農場名）というラベル列を追加
+    filtered_df["圃場ラベル"] = filtered_df["圃場名"] + "（" + filtered_df["農場名"] + "）"
+
 
 
     if color_by_option == "市区町村":
@@ -123,8 +126,9 @@ def plot_bbch_stacked_bar(df):
         color_column = "品種"
 
     elif color_by_option == "圃場名":
-        group_cols = ["BBCH開始日", "圃場名"]
-        color_column = "圃場名"
+        group_cols = ["BBCH開始日", "圃場ラベル"]  # ← 変更
+        color_column = "圃場ラベル"               # ← 変更
+
         
     # ④ 集計
     date_counts = filtered_df.groupby(group_cols).size().reset_index(name="カウント")
@@ -286,6 +290,7 @@ def create_field_map(field_data, selected_bbch, map_style, map_title, label_key,
         gmap_url = f"https://www.google.com/maps/dir/?api=1&destination={lat},{lon}"
         hover_html = (
             f"<b>{field['name']}</b><br>"
+            f"農場名: {field.get('農場名', '不明')}<br>"
             f"作物: {field.get('作物', '不明')}<br>"
             f"品種: {field['variety']}<br>"
             f"作付方法: {field.get('作付方法', '')}<br>"
@@ -1032,12 +1037,13 @@ with tab1:
 
                     # 圃場名でソートして選択肢を作る
                     field_options = {
-                        row["圃場名"]: row["中心座標"]
+                        f'{row["圃場名"]}（{row.get("農場名", "不明な農場")}）': row["中心座標"]
                         for row in sorted(
                             bbch_df.dropna(subset=["中心座標"]).to_dict(orient="records"),
                             key=lambda x: x["圃場名"]
                         )
                     }
+
 
                     # UIの選択ボックス
                     selected_jump_field = st.selectbox("📍 地図をズーム表示したい圃場を選んでください", options=list(field_options.keys()))
