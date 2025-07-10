@@ -73,7 +73,7 @@ def generate_google_maps_route(route):
 
 def plot_bbch_stacked_bar(df):
     """BBCH開始日の積立棒グラフ（x軸はカテゴリ型で日別に明示的に分離）"""
-    required_columns = ["BBCH開始日", "市区町村", "BBCHステージ", "BBCHコード", "作物", "品種", "圃場名"]
+    required_columns = ["BBCH開始日", "市区町村", "BBCHステージ", "BBCHコード", "作物", "品種", "圃場名", "農場名"]
     if not all(col in df.columns for col in required_columns):
         st.warning("必要なカラム（BBCH開始日、BBCHステージ、作物など）が不足しています。")
         return
@@ -109,6 +109,9 @@ def plot_bbch_stacked_bar(df):
 
     filtered_df = df[(df["作物"] == selected_crop) & (df["BBCHステージ"] == selected_stage)].copy()
 
+    # 圃場名（農場名）というラベル列を追加
+    filtered_df["圃場ラベル"] = filtered_df["圃場名"] + "（" + filtered_df["農場名"] + "）"
+
 
 
     if color_by_option == "市区町村":
@@ -123,8 +126,9 @@ def plot_bbch_stacked_bar(df):
         color_column = "品種"
 
     elif color_by_option == "圃場名":
-        group_cols = ["BBCH開始日", "圃場名"]
-        color_column = "圃場名"
+        group_cols = ["BBCH開始日", "圃場ラベル"]  # ← 変更
+        color_column = "圃場ラベル"               # ← 変更
+
         
     # ④ 集計
     date_counts = filtered_df.groupby(group_cols).size().reset_index(name="カウント")
@@ -286,6 +290,7 @@ def create_field_map(field_data, selected_bbch, map_style, map_title, label_key,
         gmap_url = f"https://www.google.com/maps/dir/?api=1&destination={lat},{lon}"
         hover_html = (
             f"<b>{field['name']}</b><br>"
+            f"農場名: {field.get('農場名', '不明')}<br>"
             f"作物: {field.get('作物', '不明')}<br>"
             f"品種: {field['variety']}<br>"
             f"作付方法: {field.get('作付方法', '')}<br>"
@@ -643,6 +648,7 @@ def build_field_dataframe(fields, geolocator):
 
             field_data.append({
                 "Field UUID": field_uuid,
+                "農場名": field.get("farmName", "不明な農場"),
                 "圃場名": field_name,
                 "作物": crop,
                 "品種": variety,
@@ -659,65 +665,83 @@ def build_field_dataframe(fields, geolocator):
     return field_data
 
 def fetch_fields_for_multiple_farms(farm_uuids, login_token, api_token):
-    st.session_state["graphql_api_call_count"] += 1  # ←追加
-    query = {
-        "operationName": "CombinedFieldData",
-        "variables": {
-            "farmUuids": farm_uuids,
-            "languageCode": "ja",
-            "cropSeasonLifeCycleStates": ["ACTIVE", "PLANNED"],
-            "withBoundarySvg": True
-        },
-        "query": """
-            query CombinedFieldData(
-              $farmUuids: [UUID!]!, 
-              $languageCode: String!, 
-              $cropSeasonLifeCycleStates: [LifecycleState]!, 
-              $withBoundarySvg: Boolean!
-            ) {
-              fieldsV2(farmUuids: $farmUuids) {
-                uuid
-                name
-                area
-                boundary
-                boundarySvg @include(if: $withBoundarySvg)
-                cropSeasonsV2(lifecycleState: $cropSeasonLifeCycleStates) {
-                  uuid
-                  startDate
-                  crop(languageCode: $languageCode) {
+    st.session_state["graphql_api_call_count"] += 1
+
+    all_fields = []
+    for farm_uuid in farm_uuids:
+        query = {
+            "operationName": "CombinedFieldData",
+            "variables": {
+                "farmUuids": [farm_uuid],
+                "languageCode": "ja",
+                "cropSeasonLifeCycleStates": ["ACTIVE", "PLANNED"],
+                "withBoundarySvg": True
+            },
+            "query": """
+                query CombinedFieldData(
+                  $farmUuids: [UUID!]!, 
+                  $languageCode: String!, 
+                  $cropSeasonLifeCycleStates: [LifecycleState]!, 
+                  $withBoundarySvg: Boolean!
+                ) {
+                  farms: farmsV2(uuids: $farmUuids) {
+                    uuid
                     name
                   }
-                  variety(languageCode: $languageCode) {
+                  fieldsV2(farmUuids: $farmUuids) {
+                    uuid
                     name
-                  }
-                  cropEstablishmentGrowthStageIndex
-                  cropEstablishmentMethodCode
-                  countryCropGrowthStagePredictions {
-                    index
-                    startDate
-                    endDate
-                    scale
-                    gsOrder
-                    cropGrowthStageV2(languageCode: $languageCode) {
+                    area
+                    boundary
+                    boundarySvg @include(if: $withBoundarySvg)
+                    cropSeasonsV2(lifecycleState: $cropSeasonLifeCycleStates) {
                       uuid
-                      name
-                      code
+                      startDate
+                      crop(languageCode: $languageCode) {
+                        name
+                      }
+                      variety(languageCode: $languageCode) {
+                        name
+                      }
+                      cropEstablishmentGrowthStageIndex
+                      cropEstablishmentMethodCode
+                      countryCropGrowthStagePredictions {
+                        index
+                        startDate
+                        endDate
+                        scale
+                        gsOrder
+                        cropGrowthStageV2(languageCode: $languageCode) {
+                          uuid
+                          name
+                          code
+                        }
+                      }
                     }
                   }
                 }
-              }
-            }
-        """
-    }
+            """
+        }
 
-    headers = {
-        "Content-Type": "application/json",
-        "Cookie": f"LOGIN_TOKEN={login_token}; DF_TOKEN={api_token}"
-    }
+        headers = {
+            "Content-Type": "application/json",
+            "Cookie": f"LOGIN_TOKEN={login_token}; DF_TOKEN={api_token}"
+        }
 
-    response = requests.post(GRAPHQL_END_POINT, json=query, headers=headers)
-    response.raise_for_status()
-    return response.json()["data"]["fieldsV2"]
+        response = requests.post(GRAPHQL_END_POINT, json=query, headers=headers)
+        response.raise_for_status()
+        data = response.json()["data"]
+
+        farm_name = data["farms"][0]["name"] if data["farms"] else "不明な農場"
+        fields = data["fieldsV2"]
+
+        # 各圃場に農場名を付与
+        for field in fields:
+            field["farmName"] = farm_name
+
+        all_fields.extend(fields)
+
+    return all_fields
 
 
 def extract_bbch_data(fields, selected_field_uuids, geolocator):
@@ -726,6 +750,7 @@ def extract_bbch_data(fields, selected_field_uuids, geolocator):
         if field.get("uuid") not in selected_field_uuids:
             continue
 
+        farm_name = field.get("farmName", "不明な農場")
         field_name = field.get("name", "不明な圃場名")
         area = round(field.get("area", 0) * 0.01, 2)
         boundary = field.get("boundary", {})
@@ -774,6 +799,7 @@ def extract_bbch_data(fields, selected_field_uuids, geolocator):
                     pass
                 
                 bbch_data.append({
+                    "農場名": farm_name,
                     "圃場名": field_name,
                     "作物": crop_name,
                     "作付UUID": cs_uuid,
@@ -892,14 +918,15 @@ with tab1:
             grid_options = gb.build()
 
             with st.form("select_fields"):
-                grid_response = AgGrid(df, gridOptions=grid_options, update_mode=GridUpdateMode.SELECTION_CHANGED)
+#                grid_response = AgGrid(df, gridOptions=grid_options, update_mode=GridUpdateMode.SELECTION_CHANGED)
+                grid_response = AgGrid(df, gridOptions=grid_options, update_mode=GridUpdateMode.MODEL_CHANGED)
+
                 submit = st.form_submit_button("🎯 BBCH取得")
 
             if submit:
-                selected_rows = grid_response["selected_rows"]
-
-                if selected_rows is None or len(selected_rows) == 0:
-                    st.warning("⚠ 圃場を1つ以上選択してください")
+                selected_rows = grid_response.selected_rows
+                if selected_rows is None or selected_rows.empty:
+                    st.warning("⚠ 圃場を1つ以上選択してください。")
                     st.stop()
                 else:
                     if isinstance(selected_rows, pd.DataFrame):
@@ -949,7 +976,7 @@ with tab1:
                 bbch_df = st.session_state.bbch_df
 
                 pivot_index_cols = [
-                    "圃場名", "作物", "作付UUID", "品種", "作付方法",
+                    "農場名", "圃場名", "作物", "作付UUID", "品種", "作付方法",
                     "作付時のBBCH", "作付日", "面積 (a)",
                     "都道府県", "市区町村", "中心座標" #, "ポリゴン情報"
                 ]
@@ -1010,12 +1037,13 @@ with tab1:
 
                     # 圃場名でソートして選択肢を作る
                     field_options = {
-                        row["圃場名"]: row["中心座標"]
+                        f'{row["圃場名"]}（{row.get("農場名", "不明な農場")}）': row["中心座標"]
                         for row in sorted(
                             bbch_df.dropna(subset=["中心座標"]).to_dict(orient="records"),
                             key=lambda x: x["圃場名"]
                         )
                     }
+
 
                     # UIの選択ボックス
                     selected_jump_field = st.selectbox("📍 地図をズーム表示したい圃場を選んでください", options=list(field_options.keys()))
@@ -1143,6 +1171,3 @@ with tab1:
                                     st.markdown(f"{i}. **{pt['name']}**（{pt['lat']:.5f}, {pt['lon']:.5f}）")
                             else:
                                 st.warning("⚠️ 2つ以上の圃場を選択してください。")
-
-
-
