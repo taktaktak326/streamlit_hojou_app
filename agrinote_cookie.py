@@ -6,7 +6,6 @@ import urllib.parse
 import tempfile
 import requests
 import streamlit as st
-import pandas as pd
 import geopandas as gpd
 from shapely.geometry import Polygon
 from selenium import webdriver
@@ -17,7 +16,6 @@ from selenium.webdriver.chrome.options import Options
 
 # --- ページ設定 ---
 st.set_page_config(page_title="AgriNote Shapefile Exporter", layout="wide")
-st.title("AgriNote 圃場情報取得 & Shapefile エクスポート")
 
 # --- セッション初期化 ---
 if "fields" not in st.session_state:
@@ -46,10 +44,11 @@ def fetch_fields(email, password):
     time.sleep(5)
 
     cookies_list = driver.get_cookies()
+    driver.quit()
     cookie_dict = {c['name']: c['value'] for c in cookies_list}
+
     required = ['an_api_token', 'an_login_status', 'tracking_user_uuid']
     if not all(k in cookie_dict for k in required):
-        driver.quit()
         raise Exception("必要なCookieが見つかりません")
 
     csrf_token = json.loads(urllib.parse.unquote(cookie_dict['an_login_status']))["csrf"]
@@ -69,13 +68,11 @@ def fetch_fields(email, password):
         "tracking_user_uuid": cookie_dict['tracking_user_uuid']
     }
 
-    response = requests.get("https://agri-note.jp/an-api/v1/agri_fields", headers=headers, cookies=cookies)
-    driver.quit()
+    res = requests.get("https://agri-note.jp/an-api/v1/agri_fields", headers=headers, cookies=cookies)
+    if res.status_code != 200:
+        raise Exception(f"API取得失敗: {res.status_code}")
 
-    if response.status_code != 200:
-        raise Exception(f"API取得失敗: {response.status_code}")
-
-    return response.json()
+    return res.json()
 
 # --- Shapefile 出力 ---
 def create_shapefiles(fields):
@@ -105,27 +102,27 @@ def create_shapefiles(fields):
         with zipfile.ZipFile(zip_path, "w") as zipf:
             for ext in ["shp", "shx", "dbf", "prj"]:
                 zipf.write(f"{shp_base}.{ext}", arcname=f"selected_{idx + 1}.{ext}")
+
         zip_paths.append(zip_path)
 
     return zip_paths
 
-# --- UI 入力 ---
-EMAIL = st.text_input("📧 メールアドレス", placeholder="your@email.com")
-PASSWORD = st.text_input("🔑 パスワード", type="password", placeholder="パスワードを入力")
+# --- ログインフォーム表示（ログイン前のみ） ---
+if not st.session_state.fields:
+    email = st.text_input("📧 メールアドレス", placeholder="your@email.com")
+    password = st.text_input("🔑 パスワード", type="password", placeholder="パスワードを入力")
 
-# --- 実行ボタン ---
-if st.button("🔐 ログイン & データ取得"):
-    try:
-        with st.spinner("ログイン中..."):
-            fields = fetch_fields(EMAIL, PASSWORD)
-            st.session_state.fields = fields
-            st.success(f"✅ {len(fields)} 件の圃場データを取得しました")
-    except Exception as e:
-        st.error(f"❌ エラー: {e}")
+    if st.button("🔐 ログイン & データ取得"):
+        try:
+            with st.spinner("ログイン中..."):
+                fields = fetch_fields(email, password)
+                st.session_state.fields = fields
+                st.success(f"✅ {len(fields)} 件の圃場データを取得しました")
+        except Exception as e:
+            st.error(f"❌ エラー: {e}")
 
-# --- ダウンロード処理 ---
+# --- ダウンロード表示（ログイン後のみ） ---
 if st.session_state.fields:
-    st.subheader("📦 ダウンロード")
     zip_files = create_shapefiles(st.session_state.fields)
     for idx, zip_path in enumerate(zip_files):
         with open(zip_path, "rb") as f:
