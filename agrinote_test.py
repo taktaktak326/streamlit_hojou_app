@@ -9,11 +9,10 @@ from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
 
 st.set_page_config(page_title="AgriNote Shapefile Exporter", layout="wide")
-st.title("AgriNote 圃場情報取得 & Shapefile エクスポート")
 
 # 入力
-email = st.text_input("📧 メールアドレス")
-password = st.text_input("🔑 パスワード", type="password")
+email = st.text_input("ログインメールアドレス")
+password = st.text_input("パスワード", type="password")
 
 # ログイン & データ取得
 def fetch_field_data(email, password):
@@ -42,7 +41,7 @@ def fetch_field_data(email, password):
     cookie_dict = {c['name']: c['value'] for c in cookies_list}
 
     if not all(k in cookie_dict for k in ['an_api_token', 'an_login_status', 'tracking_user_uuid']):
-        raise Exception("必要なCookieが見つかりません")
+        raise Exception("入力情報が違うか、ご利用の営農ツールは対応していないので、情報が取得できませんでした( ;∀;)")
 
     csrf = json.loads(urllib.parse.unquote(cookie_dict['an_login_status']))["csrf"]
 
@@ -87,7 +86,7 @@ def make_shapefile(fields):
     return zip_path
 
 # 実行
-if st.button("🔐 ログイン & データ取得"):
+if st.button("🔐 ログイン & 出力"):
     try:
         with st.spinner("ログイン・取得中..."):
             fields = fetch_field_data(email, password)
