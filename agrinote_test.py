@@ -14,15 +14,41 @@ st.set_page_config(page_title="AgriNote Shapefile Exporter", layout="wide")
 email = st.text_input("ログインメールアドレス")
 password = st.text_input("パスワード", type="password")
 
-# ログイン & データ取得
-def fetch_field_data(email, password):
+def create_driver():
+    # Chromeバイナリの場所
+    chrome_bin = "/usr/bin/chromium"
+
+    # Chromedriverの候補パス（順に確認）
+    possible_driver_paths = [
+        "/usr/lib/chromium/chromedriver",
+        "/usr/lib/chromium-browser/chromedriver",
+        "/usr/bin/chromedriver"
+    ]
+
+    driver_bin = None
+    for path in possible_driver_paths:
+        if os.path.exists(path):
+            driver_bin = path
+            break
+
+    if driver_bin is None:
+        raise FileNotFoundError("chromedriver が見つかりません。PATHを確認してください。")
+
+    # オプション設定
     chrome_options = Options()
-    chrome_options.binary_location = "/usr/bin/chromium"
+    chrome_options.binary_location = chrome_bin
     chrome_options.add_argument("--headless")
     chrome_options.add_argument("--no-sandbox")
     chrome_options.add_argument("--disable-dev-shm-usage")
 
-    driver = webdriver.Chrome(service=Service("/usr/bin/chromedriver"), options=chrome_options)
+    # ドライバ作成
+    return webdriver.Chrome(service=Service(driver_bin), options=chrome_options)
+
+
+# ログイン & データ取得
+def fetch_field_data(email, password):
+    driver = create_driver()  # ← ここを書き換える
+
     driver.get("https://agri-note.jp/b/login/")
     time.sleep(2)
 
@@ -63,6 +89,7 @@ def fetch_field_data(email, password):
     if res.status_code != 200:
         raise Exception(f"圃場データ取得失敗: {res.status_code}")
     return res.json()
+
 
 # Shapefile作成
 def make_shapefile(fields):
