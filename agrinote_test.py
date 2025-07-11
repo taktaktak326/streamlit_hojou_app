@@ -2,61 +2,22 @@ import streamlit as st
 import os
 import subprocess
 
-st.set_page_config(page_title="Chromium Debugger", layout="wide")
+st.set_page_config(page_title="Chromium / Chromedriver Debugger", layout="wide")
 st.title("🛠️ Render 環境の Chromium / Chromedriver デバッグ")
 
-# --- 1. パス確認 ---
-def find_binaries():
-    chrome_candidates = [
-        "/usr/bin/chromium",
-        "/usr/bin/chromium-browser",
-        "/usr/lib/chromium/chromium",
-        "/usr/lib/chromium-browser/chromium"
-    ]
-    driver_candidates = [
-        "/usr/bin/chromedriver",
-        "/usr/lib/chromium/chromedriver",
-        "/usr/lib/chromium-browser/chromedriver"
-    ]
-
-    chrome_bin = next((p for p in chrome_candidates if os.path.exists(p)), None)
-    driver_bin = next((p for p in driver_candidates if os.path.exists(p)), None)
-
-    return chrome_bin, driver_bin
-
-chrome_bin, driver_bin = find_binaries()
-
-st.subheader("🔍 パス確認")
-st.write("✅ Chromium:", chrome_bin or "❌ Not Found")
-st.write("✅ Chromedriver:", driver_bin or "❌ Not Found")
-
-# --- 2. 実行権限確認 ---
-st.subheader("🔐 実行権限確認")
-if chrome_bin:
-    st.write(f"Chromium 実行可能: {'✅ Yes' if os.access(chrome_bin, os.X_OK) else '❌ No'}")
-if driver_bin:
-    st.write(f"Chromedriver 実行可能: {'✅ Yes' if os.access(driver_bin, os.X_OK) else '❌ No'}")
-
-# --- 3. バージョン確認 ---
-def get_version(cmd):
+def get_binary_path(binary_name):
     try:
-        result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        return result.stdout.decode().strip() or result.stderr.decode().strip()
+        result = subprocess.run(["which", binary_name], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        return result.stdout.decode().strip()
     except Exception as e:
         return f"エラー: {e}"
 
-st.subheader("🧭 バージョン確認")
-if chrome_bin:
-    st.write("Chromium バージョン:", get_version([chrome_bin, "--version"]))
-if driver_bin:
-    st.write("Chromedriver バージョン:", get_version([driver_bin, "--version"]))
-
-# --- 4. PATH環境変数表示 ---
-st.subheader("📦 環境変数 PATH")
-st.code(os.environ.get("PATH", "Not Found"))
-
-# --- 5. ls -l で確認 ---
-st.subheader("📁 /usr/bin と /usr/lib/chromium の中身")
+def get_version(path, args=["--version"]):
+    try:
+        result = subprocess.run([path] + args, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        return result.stdout.decode().strip() or result.stderr.decode().strip()
+    except Exception as e:
+        return f"エラー: {e}"
 
 def list_dir(path):
     try:
@@ -64,8 +25,54 @@ def list_dir(path):
     except Exception as e:
         return f"❌ エラー: {e}"
 
-st.text("📂 /usr/bin:")
+# 候補パス
+chrome_candidates = [
+    "/usr/bin/chromium-browser",
+    "/usr/bin/chromium",
+    "/usr/lib/chromium/chromium",
+    "/usr/lib/chromium-browser/chromium",
+]
+driver_candidates = [
+    "/usr/bin/chromedriver",
+    "/usr/lib/chromium/chromedriver",
+    "/usr/lib/chromium-browser/chromedriver",
+]
+
+# 検出
+chrome_path = next((p for p in chrome_candidates if os.path.exists(p)), None)
+driver_path = next((p for p in driver_candidates if os.path.exists(p)), None)
+
+st.subheader("🔍 パス検出結果")
+st.write("✅ Chromium path:", chrome_path or "❌ Not Found")
+st.write("✅ Chromedriver path:", driver_path or "❌ Not Found")
+
+st.subheader("🔐 実行権限")
+if chrome_path:
+    st.write("Chromium 実行可能:", "✅ Yes" if os.access(chrome_path, os.X_OK) else "❌ No")
+if driver_path:
+    st.write("Chromedriver 実行可能:", "✅ Yes" if os.access(driver_path, os.X_OK) else "❌ No")
+
+st.subheader("🧭 バージョン確認")
+if chrome_path:
+    st.write("Chromium バージョン:", get_version(chrome_path))
+else:
+    st.warning("Chromium が見つかりませんでした。")
+
+if driver_path:
+    st.write("Chromedriver バージョン:", get_version(driver_path))
+else:
+    st.warning("Chromedriver が見つかりませんでした。")
+
+st.subheader("📦 PATH環境変数")
+st.code(os.environ.get("PATH", "❌ Not Found"))
+
+st.subheader("📂 ディレクトリの中身")
+
+st.text("📁 /usr/bin:")
 st.code(list_dir("/usr/bin"))
 
-st.text("📂 /usr/lib/chromium:")
+st.text("📁 /usr/lib/chromium:")
 st.code(list_dir("/usr/lib/chromium"))
+
+st.text("📁 /usr/lib/chromium-browser:")
+st.code(list_dir("/usr/lib/chromium-browser"))
