@@ -12,18 +12,12 @@ import subprocess
 st.set_page_config(page_title="AgriNote Shapefile Exporter", layout="wide")
 # 🔍 Chromeとchromedriverのパスを確認（Render用）
 def debug_paths():
-    try:
-        chrome_path = subprocess.run(["which", "chromium-browser"], stdout=subprocess.PIPE).stdout.decode().strip()
-    except:
-        chrome_path = "Not Found"
+    chrome_path = subprocess.run(["which", "chromium-browser"], stdout=subprocess.PIPE).stdout.decode().strip()
+    driver_path = subprocess.run(["which", "chromedriver"], stdout=subprocess.PIPE).stdout.decode().strip()
 
-    try:
-        driver_path = subprocess.run(["which", "chromedriver"], stdout=subprocess.PIPE).stdout.decode().strip()
-    except:
-        driver_path = "Not Found"
+    st.write("🔍 chromium-browser path:", chrome_path or "Not Found")
+    st.write("🔍 chromedriver path:", driver_path or "Not Found")
 
-    st.write("🔍 chromium path:", chrome_path if chrome_path else "Not Found")
-    st.write("🔍 chromedriver path:", driver_path if driver_path else "Not Found")
 
 debug_paths()
 
@@ -33,34 +27,30 @@ email = st.text_input("ログインメールアドレス")
 password = st.text_input("パスワード", type="password")
 
 def create_driver():
-    # Chromeバイナリの場所
-    chrome_bin = "/usr/bin/chromium"
+    # Chromeのパス
+    chrome_bin = "/usr/bin/chromium-browser"
+    if not os.path.exists(chrome_bin):
+        raise FileNotFoundError("chromium-browser が見つかりません。")
 
-    # Chromedriverの候補パス（順に確認）
+    # chromedriver のパス候補
     possible_driver_paths = [
-        "/usr/lib/chromium/chromedriver",
         "/usr/lib/chromium-browser/chromedriver",
-        "/usr/bin/chromedriver"
+        "/usr/lib/chromium/chromedriver",
+        "/usr/bin/chromedriver",
     ]
 
-    driver_bin = None
-    for path in possible_driver_paths:
-        if os.path.exists(path):
-            driver_bin = path
-            break
+    driver_bin = next((p for p in possible_driver_paths if os.path.exists(p)), None)
+    if not driver_bin:
+        raise FileNotFoundError("chromedriver が見つかりません。PATHまたはpackages.txtを確認してください。")
 
-    if driver_bin is None:
-        raise FileNotFoundError("chromedriver が見つかりません。PATHを確認してください。")
-
-    # オプション設定
     chrome_options = Options()
     chrome_options.binary_location = chrome_bin
     chrome_options.add_argument("--headless")
     chrome_options.add_argument("--no-sandbox")
     chrome_options.add_argument("--disable-dev-shm-usage")
 
-    # ドライバ作成
     return webdriver.Chrome(service=Service(driver_bin), options=chrome_options)
+
 
 
 # ログイン & データ取得
