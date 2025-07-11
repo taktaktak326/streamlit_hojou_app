@@ -12,14 +12,26 @@ import subprocess
 st.set_page_config(page_title="AgriNote Shapefile Exporter", layout="wide")
 # 🔍 Chromeとchromedriverのパスを確認（Render用）
 def debug_paths():
-    chrome_path = subprocess.run(["which", "chromium-browser"], stdout=subprocess.PIPE).stdout.decode().strip()
-    driver_path = subprocess.run(["which", "chromedriver"], stdout=subprocess.PIPE).stdout.decode().strip()
+    try:
+        chrome_path = subprocess.run(["which", "chromium-browser"], stdout=subprocess.PIPE).stdout.decode().strip()
+    except Exception as e:
+        chrome_path = ""
 
-    st.write("🔍 chromium-browser path:", chrome_path or "Not Found")
-    st.write("🔍 chromedriver path:", driver_path or "Not Found")
+    try:
+        driver_path = subprocess.run(["which", "chromedriver"], stdout=subprocess.PIPE).stdout.decode().strip()
+    except Exception as e:
+        driver_path = ""
 
+    if chrome_path:
+        st.write("🔍 chromium-browser path:", chrome_path)
+    else:
+        st.error("❌ chromium-browser が見つかりません（which に失敗）")
 
-debug_paths()
+    if driver_path:
+        st.write("🔍 chromedriver path:", driver_path)
+    else:
+        st.error("❌ chromedriver が見つかりません（which に失敗）")
+
 
 
 # 入力
@@ -43,6 +55,9 @@ def create_driver():
     if not driver_bin:
         raise FileNotFoundError("chromedriver が見つかりません。PATHまたはpackages.txtを確認してください。")
 
+    st.write(f"✅ 使用するchromedriverパス: {driver_bin}")
+    st.write(f"✅ 使用するchromiumバイナリ: {chrome_bin}")
+
     chrome_options = Options()
     chrome_options.binary_location = chrome_bin
     chrome_options.add_argument("--headless")
@@ -50,6 +65,7 @@ def create_driver():
     chrome_options.add_argument("--disable-dev-shm-usage")
 
     return webdriver.Chrome(service=Service(driver_bin), options=chrome_options)
+
 
 
 
