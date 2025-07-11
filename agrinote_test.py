@@ -7,8 +7,18 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
+import subprocess 
 
 st.set_page_config(page_title="AgriNote Shapefile Exporter", layout="wide")
+# 🔍 Chromeとchromedriverのパスを確認（Render用）
+def debug_paths():
+    chrome_path = subprocess.run("which chromium", shell=True, capture_output=True, text=True).stdout.strip()
+    driver_path = subprocess.run("which chromedriver", shell=True, capture_output=True, text=True).stdout.strip()
+
+    st.write("🔍 chromium path:", chrome_path or "Not Found")
+    st.write("🔍 chromedriver path:", driver_path or "Not Found")
+
+debug_paths() 
 
 # 入力
 email = st.text_input("ログインメールアドレス")
