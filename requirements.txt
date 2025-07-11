@@ -13,7 +13,7 @@ pyshp
 pyvirtualdisplay
 requests
 rtree
-selenium
+selenium == 4.6
 shapely
 streamlit==1.41.1
 streamlit-aggrid==1.1.2
