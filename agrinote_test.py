@@ -12,13 +12,21 @@ import subprocess
 st.set_page_config(page_title="AgriNote Shapefile Exporter", layout="wide")
 # 🔍 Chromeとchromedriverのパスを確認（Render用）
 def debug_paths():
-    chrome_path = subprocess.run("which chromium", shell=True, capture_output=True, text=True).stdout.strip()
-    driver_path = subprocess.run("which chromedriver", shell=True, capture_output=True, text=True).stdout.strip()
+    try:
+        chrome_path = subprocess.run(["which", "chromium-browser"], stdout=subprocess.PIPE).stdout.decode().strip()
+    except:
+        chrome_path = "Not Found"
 
-    st.write("🔍 chromium path:", chrome_path or "Not Found")
-    st.write("🔍 chromedriver path:", driver_path or "Not Found")
+    try:
+        driver_path = subprocess.run(["which", "chromedriver"], stdout=subprocess.PIPE).stdout.decode().strip()
+    except:
+        driver_path = "Not Found"
 
-debug_paths() 
+    st.write("🔍 chromium path:", chrome_path if chrome_path else "Not Found")
+    st.write("🔍 chromedriver path:", driver_path if driver_path else "Not Found")
+
+debug_paths()
+
 
 # 入力
 email = st.text_input("ログインメールアドレス")
