@@ -1,6 +1,6 @@
 import streamlit as st
 import folium
-from streamlit_folium import folium_static
+from streamlit_folium import st_folium
 from shapely.geometry import Polygon
 import geopandas as gpd
 import json
@@ -48,7 +48,7 @@ def create_map(data):
                 fill_opacity=0.4,
                 tooltip=field_name
             ).add_to(m)
-    
+
     return m
 
 def create_shapefile(data):
@@ -66,7 +66,9 @@ def create_shapefile(data):
         
         if region_latlngs:
             coords = [(point["lng"], point["lat"]) for point in region_latlngs]  # GeoJSON uses (lng, lat)
-            polygon = Polygon(coords)
+            polygon = Polygon(coords) # type: ignore
+            if not polygon.is_valid:
+                polygon = polygon.buffer(0)
             field_names.append(field_name)
             polygons.append(polygon)
     
@@ -95,14 +97,19 @@ def get_field_dataframe(data):
         
         if region_latlngs:
             coords = [(point["lng"], point["lat"]) for point in region_latlngs]
-            polygon = Polygon(coords)
+            polygon = Polygon(coords) # type: ignore
+            if not polygon.is_valid:
+                polygon = polygon.buffer(0)
             field_names.append(field_name)
             polygons.append(polygon)
 
     gdf = gpd.GeoDataFrame({"FieldName": field_names, "geometry": polygons}, geometry="geometry", crs="EPSG:4326")
 
+    if gdf.empty:
+        return pd.DataFrame()
+
     # 面積計算のために適切なUTMゾーンに変換
-    center_lng = gdf.unary_union.centroid.x
+    center_lng = gdf.union_all().centroid.x
     utm_zone = math.floor((center_lng + 180) / 6) + 1
     utm_crs = f"EPSG:326{utm_zone}"
     gdf_proj = gdf.to_crs(utm_crs)
@@ -128,7 +135,7 @@ elif json_input:
 if data:
     st.subheader("マップ表示")
     field_map = create_map(data)
-    folium_static(field_map)
+    st_folium(field_map, width=725)
     
     st.subheader("圃場情報")
     df_fields = get_field_dataframe(data)
