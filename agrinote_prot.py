@@ -114,7 +114,7 @@ def get_field_dataframe(data):
     utm_crs = f"EPSG:326{utm_zone}"
     gdf_proj = gdf.to_crs(utm_crs)
     
-    df = pd.DataFrame({"圃場名": gdf["FieldName"], "面積(ha)": gdf_proj.geometry.area / 10000})
+    df = pd.DataFrame({"圃場名": gdf["FieldName"], "面積(a)": gdf_proj.geometry.area / 100})
     return df
 
 # Streamlit UI
@@ -141,9 +141,12 @@ if data:
     df_fields = get_field_dataframe(data)
     
     total_fields = len(df_fields)
-    total_area = df_fields["面積(ha)"].sum()
-    st.metric(label="合計圃場数", value=f"{total_fields} 筆")
-    st.dataframe(df_fields)
+    if not df_fields.empty:
+        total_area = df_fields["面積(a)"].sum()
+        col1, col2 = st.columns(2)
+        col1.metric(label="合計圃場数", value=f"{total_fields} 筆")
+        col2.metric(label="合計面積 (a)", value=f"{total_area:.2f} a")
+    st.dataframe(df_fields.style.format({"面積(a)": "{:.2f}"}))
     
     st.subheader("シェープファイルの作成")
     zip_filepath = create_shapefile(data)
