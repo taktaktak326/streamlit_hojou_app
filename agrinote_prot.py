@@ -6,6 +6,7 @@ import geopandas as gpd
 import json
 import os
 import zipfile
+import math
 import pandas as pd
 
 def get_center_coordinates(data):
@@ -80,6 +81,35 @@ def create_shapefile(data):
     
     return zip_filename
 
+def get_field_dataframe(data):
+    """圃場データから面積を計算し、Pandas DataFrameを返す"""
+    if not data:
+        return pd.DataFrame()
+
+    field_names = []
+    polygons = []
+    
+    for field in data:
+        field_name = field.get("field_name", "（圃場名なし）").strip()
+        region_latlngs = field.get("region_latlngs", [])
+        
+        if region_latlngs:
+            coords = [(point["lng"], point["lat"]) for point in region_latlngs]
+            polygon = Polygon(coords)
+            field_names.append(field_name)
+            polygons.append(polygon)
+
+    gdf = gpd.GeoDataFrame({"FieldName": field_names, "geometry": polygons}, geometry="geometry", crs="EPSG:4326")
+
+    # 面積計算のために適切なUTMゾーンに変換
+    center_lng = gdf.unary_union.centroid.x
+    utm_zone = math.floor((center_lng + 180) / 6) + 1
+    utm_crs = f"EPSG:326{utm_zone}"
+    gdf_proj = gdf.to_crs(utm_crs)
+    
+    df = pd.DataFrame({"圃場名": gdf["FieldName"], "面積(ha)": gdf_proj.geometry.area / 10000})
+    return df
+
 # Streamlit UI
 st.title("Agrinote圃場形状JSONからファイル作成アプリ")
 
@@ -100,9 +130,13 @@ if data:
     field_map = create_map(data)
     folium_static(field_map)
     
-    st.subheader("圃場名一覧")
-    field_names = [field.get("field_name", "（圃場名なし）") for field in data]
-    st.write(field_names)
+    st.subheader("圃場情報")
+    df_fields = get_field_dataframe(data)
+    
+    total_fields = len(df_fields)
+    total_area = df_fields["面積(ha)"].sum()
+    st.metric(label="合計圃場数", value=f"{total_fields} 筆")
+    st.dataframe(df_fields)
     
     st.subheader("シェープファイルの作成")
     zip_filepath = create_shapefile(data)
