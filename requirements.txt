@@ -1,4 +1,4 @@
-browser_cookie3
+browser-cookie3
 fiona
 folium
 geopandas
@@ -13,7 +13,7 @@ pyshp
 pyvirtualdisplay
 requests
 rtree
-selenium == 4.6
+selenium==4.6
 shapely
 streamlit==1.41.1
 streamlit-aggrid==1.1.2
@@ -21,4 +21,3 @@ streamlit-folium
 xlsxwriter
 xmltodict
 numpy==1.26.4
-
