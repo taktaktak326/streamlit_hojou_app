@@ -1713,7 +1713,7 @@ def build_load_table(tasks: pd.DataFrame, farm: str, group_by: str, utilization:
 # Streamlit UI
 # ----------------------------
 
-st.set_page_config(page_title="CS Board Hybrid Viewer v2", layout="wide")
+st.set_page_config(page_title="CS Viewer", layout="wide")
 try:
     st.set_option("browser.gatherUsageStats", False)
 except Exception:
