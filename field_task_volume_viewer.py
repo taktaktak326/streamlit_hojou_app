@@ -1713,7 +1713,7 @@ def build_load_table(tasks: pd.DataFrame, farm: str, group_by: str, utilization:
 # Streamlit UI
 # ----------------------------
 
-st.set_page_config(page_title="CS Viewer", layout="wide")
+st.set_page_config(page_title="CS Board Hybrid Viewer v2", layout="wide")
 try:
     st.set_option("browser.gatherUsageStats", False)
 except Exception:
@@ -2946,12 +2946,25 @@ if drilldown_daily:
             for tr in fig_day.data:
                 # facet_col puts the second panel on x2/y2 (right side)
                 if getattr(tr, "xaxis", "x") == "x2":
-                    tr.marker.pattern = dict(
-                        shape="/",
-                        solidity=0.25,
-                        size=6,
-                        fgcolor="rgba(0,0,0,0.35)",
-                    )
+                    # NOTE: Some Streamlit Cloud environments ship older plotly.js where
+                    # bar marker.pattern may not render. Keep a visible fallback (outline/opacity).
+                    try:
+                        tr.marker.pattern = dict(
+                            shape="/",
+                            solidity=0.25,
+                            size=6,
+                            fgcolor="rgba(0,0,0,0.35)",
+                        )
+                    except Exception:
+                        pass
+                    try:
+                        tr.marker.line = dict(color="rgba(0,0,0,0.45)", width=1)
+                    except Exception:
+                        pass
+                    try:
+                        tr.opacity = 0.90
+                    except Exception:
+                        pass
         fig_day.update_layout(template="plotly_white", height=460, margin=dict(t=70, r=20, b=40, l=60))
         fig_day.add_hline(y=float(utilization), line_dash="dash", line_color="red")
         fig_day.update_yaxes(rangemode="tozero")
@@ -3141,12 +3154,25 @@ if (not drilldown_daily) and scenario_tasks:
         if compare_mode:
             for tr in fig.data:
                 if getattr(tr, "xaxis", "x") == "x2":
-                    tr.marker.pattern = dict(
-                        shape="/",
-                        solidity=0.25,
-                        size=6,
-                        fgcolor="rgba(0,0,0,0.35)",
-                    )
+                    # NOTE: Some Streamlit Cloud environments ship older plotly.js where
+                    # bar marker.pattern may not render. Keep a visible fallback (outline/opacity).
+                    try:
+                        tr.marker.pattern = dict(
+                            shape="/",
+                            solidity=0.25,
+                            size=6,
+                            fgcolor="rgba(0,0,0,0.35)",
+                        )
+                    except Exception:
+                        pass
+                    try:
+                        tr.marker.line = dict(color="rgba(0,0,0,0.45)", width=1)
+                    except Exception:
+                        pass
+                    try:
+                        tr.opacity = 0.90
+                    except Exception:
+                        pass
         # Red line: keep it simple (annotations tend to overlap when comparing scenarios)
         fig.add_hline(y=float(utilization), line_dash="dash", line_color="red")
         if group_by == "旬":
