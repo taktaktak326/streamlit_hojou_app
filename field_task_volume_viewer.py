@@ -17,9 +17,8 @@ from typing import Dict, Tuple, Optional, List
 import numpy as np
 import pandas as pd
 import streamlit as st
+import streamlit.components.v1 as components
 import plotly.express as px
-from openpyxl import load_workbook
-from openpyxl.utils import get_column_letter
 
 # ----------------------------
 # Helpers: parsing & mappings
@@ -169,11 +168,38 @@ def mid_date(s: dt.date, e: dt.date) -> dt.date:
         s, e = e, s
     return s + dt.timedelta(days=((e - s).days // 2))
 
+def _work_label_col(df_in: pd.DataFrame) -> pd.Series:
+    g = df_in.get("作業グループ", "").fillna("").astype(str).str.strip()
+    m = df_in.get("メモ", "").fillna("").astype(str).str.strip()
+    m = m.where(~m.str.lower().isin({"nan", "none"}), "")
+    return np.where(m != "", g + "(" + m + ")", g)
+
 JP_RANGE_PATTERN_1 = re.compile(r"(?P<m1>\d{1,2})月(?P<d1>\d{1,2})日\s*[～〜\-]\s*(?P<m2>\d{1,2})月(?P<d2>\d{1,2})日")
 JP_RANGE_PATTERN_2 = re.compile(r"(?P<m1>\d{1,2})月(?P<p1>上旬|中旬|下旬)\s*[～〜\-]\s*(?P<m2>\d{1,2})月(?P<p2>上旬|中旬|下旬)")
 JP_SINGLE_PART = re.compile(r"(?P<m>\d{1,2})月(?P<p>上旬|中旬|下旬)")
 ISO_RANGE_PATTERN = re.compile(
     r"(?P<y1>\d{4})[./-](?P<m1>\d{1,2})[./-](?P<d1>\d{1,2})\s*[～〜\-]\s*(?P<y2>\d{4})[./-](?P<m2>\d{1,2})[./-](?P<d2>\d{1,2})"
+)
+
+_ZENKAKU_TRANSLATION = str.maketrans(
+    {
+        "０": "0",
+        "１": "1",
+        "２": "2",
+        "３": "3",
+        "４": "4",
+        "５": "5",
+        "６": "6",
+        "７": "7",
+        "８": "8",
+        "９": "9",
+        "／": "/",
+        "．": ".",
+        "－": "-",
+        "−": "-",
+        "＋": "+",
+        "　": " ",
+    }
 )
 
 def part_to_day_range(year:int, month:int, part:str) -> Tuple[dt.date, dt.date]:
@@ -188,7 +214,7 @@ def parse_jp_date_range(text: str, year: int) -> Optional[Tuple[dt.date, dt.date
     """Parse strings like '5月1日～6月20日', '3月下旬~4月上旬', '4月上旬'."""
     if text is None:
         return None
-    s = str(text).strip()
+    s = str(text).strip().translate(_ZENKAKU_TRANSLATION)
     if not s or s.lower() in {"nan", "none"}:
         return None
 
@@ -367,7 +393,20 @@ def _parse_int(x) -> Optional[int]:
     try:
         return int(float(x))
     except Exception:
-        return None
+        s = str(x).strip()
+        if not s or s.lower() in {"nan", "none"}:
+            return None
+        try:
+            s = s.translate(_ZENKAKU_TRANSLATION)
+        except Exception:
+            pass
+        m = re.search(r"[-+]?\d+", s)
+        if not m:
+            return None
+        try:
+            return int(m.group(0))
+        except Exception:
+            return None
 
 def _jun_mid_date(year: int, jun_no: int) -> dt.date:
     s, e = jun_range(year, jun_no)
@@ -440,13 +479,6 @@ def _days_inclusive(s: dt.date, e: dt.date) -> int:
         s, e = e, s
     return (e - s).days + 1
 
-def _overlap_range(a_start: dt.date, a_end: dt.date, b_start: dt.date, b_end: dt.date) -> Optional[Tuple[dt.date, dt.date]]:
-    s = max(a_start, b_start)
-    e = min(a_end, b_end)
-    if e < s:
-        return None
-    return s, e
-
 def _date_mid(s: dt.date, e: dt.date) -> dt.date:
     if e < s:
         s, e = e, s
@@ -463,8 +495,8 @@ def compute_task_events(
     include_sources: List[str],
 ) -> pd.DataFrame:
     """
-    Build date-range events (start/end) with total area and machine-days.
-    These are used to compute daily peaks within a Jun bucket.
+    Build date-range events (From/To) with total area and machine-days.
+    Used for daily drill-down within a given window.
     """
     farm_key = str(farm).strip()
     cap_long = compute_farm_capacities(df_mach, defaults)
@@ -497,26 +529,34 @@ def compute_task_events(
         cat = str(cat).strip()
         if cat not in VALID_MACHINE_CATS:
             return
+        if end_date < start_date:
+            start_date, end_date = end_date, start_date
+
         cap = cap_lu.get((farm_key, cat), np.nan)
         mdays_total = np.nan
         if cap and not pd.isna(cap) and cap > 0:
             mdays_total = area_total / cap
-        memo_clean = memo if memo and memo.lower() not in {"nan", "none"} else ""
-        events.append({
-            "農家名": farm_key,
-            "作物": crop,
-            "作業グループ": work_group,
-            "メモ": memo_clean,
-            "作業": work,
-            "農機カテゴリ": cat,
-            "From": start_date,
-            "To": end_date,
-            "面積(ha)": float(area_total),
-            "能力(ha/日)": cap,
-            "推定機械日数_有効": float(mdays_total) if (mdays_total is not None and not pd.isna(mdays_total)) else 0.0,
-            "source": source,
-            "入力行Index": input_row_index,
-        })
+
+        memo_clean = memo if memo and str(memo).strip().lower() not in {"nan", "none"} else ""
+        work_clean = work if work and str(work).strip().lower() not in {"nan", "none"} else str(work_group).strip()
+
+        events.append(
+            {
+                "農家名": farm_key,
+                "作物": str(crop).strip(),
+                "作業グループ": str(work_group).strip(),
+                "メモ": memo_clean,
+                "作業": work_clean,
+                "農機カテゴリ": cat,
+                "From": start_date,
+                "To": end_date,
+                "面積(ha)": float(area_total),
+                "能力(ha/日)": cap,
+                "推定機械日数_有効": float(mdays_total) if (mdays_total is not None and not pd.isna(mdays_total)) else 0.0,
+                "source": str(source).strip(),
+                "入力行Index": input_row_index,
+            }
+        )
 
     if "sowplant_range" in include_sources:
         for idx, r in sak.reset_index(drop=True).iterrows():
@@ -563,7 +603,7 @@ def compute_task_events(
             rep = safe_date(r.get("播種/移植日（代表日・調整）"))
             s_date = safe_date(r.get("播種/移植_開始日（参考）"))
             e_date = safe_date(r.get("播種/移植_終了日（参考）"))
-            base_year = (rep.year if rep else (s_date.year if s_date else (e_date.year if e_date else dt.date.today().year)))
+            base_year = rep.year if rep else (s_date.year if s_date else (e_date.year if e_date else dt.date.today().year))
 
             dur = r.get("作期日数(上書き)")
             if pd.isna(dur):
@@ -574,9 +614,7 @@ def compute_task_events(
                 dur = defaults.crop_duration_days.get("その他", 120)
 
             sow_rng = sowplant_range_for_row(r, defaults)
-            sow_period_days = None
-            if sow_rng is not None:
-                sow_period_days = _days_inclusive(sow_rng[0], sow_rng[1])
+            sow_period_days = _days_inclusive(sow_rng[0], sow_rng[1]) if sow_rng is not None else None
 
             harvest = safe_date(r.get("収穫日(上書き)"))
             harvest_rng = None
@@ -636,10 +674,10 @@ def compute_task_events(
                     times_coef = 1.0
 
                 task_area = area * area_coef * times_coef
+                delta_days = int(offset) * 10
 
                 if dist_on_sowplant and sow_rng is not None:
                     s0, e0, _ = sow_rng
-                    delta_days = offset * 10
                     add_event(
                         crop=crop,
                         work_group=work_group,
@@ -656,7 +694,6 @@ def compute_task_events(
 
                 if dist_on_harvest and harvest_rng is not None:
                     s0, e0 = harvest_rng
-                    delta_days = offset * 10
                     add_event(
                         crop=crop,
                         work_group=work_group,
@@ -671,13 +708,51 @@ def compute_task_events(
                     )
                     continue
 
-                # fall back: anchor date (rep/harvest) + offset, optionally with duration
+                if (
+                    duration_days is None
+                    and sow_rng is not None
+                    and sow_period_days is not None
+                    and sow_period_days >= 2
+                    and str(base).strip().startswith("S")
+                ):
+                    s0, e0, _ = sow_rng
+                    add_event(
+                        crop=crop,
+                        work_group=work_group,
+                        memo=memo,
+                        work=work,
+                        cat=cat,
+                        start_date=s0 + dt.timedelta(days=delta_days),
+                        end_date=e0 + dt.timedelta(days=delta_days),
+                        area_total=task_area,
+                        source="template",
+                        input_row_index=idx + 1,
+                    )
+                    continue
+
+                if duration_days is None and harvest_rng is not None and str(base).strip().startswith("H"):
+                    s0, e0 = harvest_rng
+                    add_event(
+                        crop=crop,
+                        work_group=work_group,
+                        memo=memo,
+                        work=work,
+                        cat=cat,
+                        start_date=s0 + dt.timedelta(days=delta_days),
+                        end_date=e0 + dt.timedelta(days=delta_days),
+                        area_total=task_area,
+                        source="template",
+                        input_row_index=idx + 1,
+                    )
+                    continue
+
                 anchor = rep if str(base).strip().startswith("S") else harvest
                 if anchor is None and sow_rng is not None:
                     anchor = _date_mid(sow_rng[0], sow_rng[1])
                 if anchor is None:
                     continue
-                anchor = anchor + dt.timedelta(days=offset * 10)
+
+                anchor = anchor + dt.timedelta(days=delta_days)
                 if duration_days is not None and duration_days >= 2:
                     left = (duration_days - 1) // 2
                     right = (duration_days - 1) - left
@@ -706,7 +781,7 @@ def compute_task_events(
         exc = exc[exc["有効(1/0)"] == 1]
         if not exc.empty:
             for _, e in exc.iterrows():
-                if str(e.get("農家名", "")).strip() != farm:
+                if str(e.get("農家名", "")).strip() != farm_key:
                     continue
                 crop = str(e.get("作物", "")).strip()
                 work_group = str(e.get("作業グループ", "")).strip() or "例外"
@@ -730,7 +805,6 @@ def compute_task_events(
                 except Exception:
                     times_coef = 1.0
 
-                # base sow/harvest range from sak rows for this crop
                 sak_fc = sak[sak["作物"] == crop].copy()
                 if sak_fc.empty:
                     continue
@@ -764,10 +838,10 @@ def compute_task_events(
                     dist_on_harvest = True
 
                 area_total = float(sak_fc["面積(ha)"].astype(float).sum()) * area_coef * times_coef
+                delta_days = int(offset) * 10
 
                 if dist_on_sowplant:
                     s0, e0, _ = sow_rng
-                    delta_days = offset * 10
                     add_event(
                         crop=crop,
                         work_group=work_group,
@@ -784,7 +858,38 @@ def compute_task_events(
 
                 if dist_on_harvest and harvest_rng is not None:
                     s0, e0 = harvest_rng
-                    delta_days = offset * 10
+                    add_event(
+                        crop=crop,
+                        work_group=work_group,
+                        memo=memo,
+                        work=work,
+                        cat=cat,
+                        start_date=s0 + dt.timedelta(days=delta_days),
+                        end_date=e0 + dt.timedelta(days=delta_days),
+                        area_total=area_total,
+                        source="exception",
+                        input_row_index=None,
+                    )
+                    continue
+
+                if duration_days is None and str(base).strip().startswith("S") and sow_period_days >= 2:
+                    s0, e0, _ = sow_rng
+                    add_event(
+                        crop=crop,
+                        work_group=work_group,
+                        memo=memo,
+                        work=work,
+                        cat=cat,
+                        start_date=s0 + dt.timedelta(days=delta_days),
+                        end_date=e0 + dt.timedelta(days=delta_days),
+                        area_total=area_total,
+                        source="exception",
+                        input_row_index=None,
+                    )
+                    continue
+
+                if duration_days is None and str(base).strip().startswith("H") and harvest_rng is not None:
+                    s0, e0 = harvest_rng
                     add_event(
                         crop=crop,
                         work_group=work_group,
@@ -802,7 +907,7 @@ def compute_task_events(
                 anchor = _date_mid(sow_rng[0], sow_rng[1]) if str(base).strip().startswith("S") else _date_mid(harvest_rng[0], harvest_rng[1]) if harvest_rng else None
                 if anchor is None:
                     continue
-                anchor = anchor + dt.timedelta(days=offset * 10)
+                anchor = anchor + dt.timedelta(days=delta_days)
                 if duration_days is not None and duration_days >= 2:
                     left = (duration_days - 1) // 2
                     right = (duration_days - 1) - left
@@ -849,12 +954,19 @@ def daily_load_in_window(
     if ev.empty:
         return pd.DataFrame(), pd.DataFrame()
 
-    totals = {}
-    contrib_rows = []
+    def _overlap_range(a_start: dt.date, a_end: dt.date, b_start: dt.date, b_end: dt.date) -> Optional[Tuple[dt.date, dt.date]]:
+        s = max(a_start, b_start)
+        e = min(a_end, b_end)
+        if e < s:
+            return None
+        return s, e
+
+    totals: Dict[dt.date, float] = {}
+    contrib_rows: List[Dict] = []
 
     for _, r in ev.iterrows():
-        s = r["From"]
-        e = r["To"]
+        s = r.get("From")
+        e = r.get("To")
         if s is None or e is None:
             continue
         rng = _overlap_range(s, e, window_start, window_end)
@@ -864,139 +976,43 @@ def daily_load_in_window(
         event_days = _days_inclusive(s, e)
         if event_days <= 0:
             continue
-        md_per_day = float(r.get("推定機械日数_有効", 0.0)) / event_days
-        area_per_day = float(r.get("面積(ha)", 0.0)) / event_days
+        md_total = float(pd.to_numeric(r.get("推定機械日数_有効", 0.0), errors="coerce") or 0.0)
+        md_per_day = md_total / event_days
+        area_total = float(pd.to_numeric(r.get("面積(ha)", 0.0), errors="coerce") or 0.0)
+        area_per_day = area_total / event_days
+
         d = os
         while d <= oe:
             totals[d] = totals.get(d, 0.0) + md_per_day
-            contrib_rows.append({
-                "日付": d,
-                "作物": r.get("作物", ""),
-                "作業": r.get("作業", ""),
-                "作業グループ": r.get("作業グループ", ""),
-                "メモ": r.get("メモ", ""),
-                "source": r.get("source", ""),
-                "入力行Index": r.get("入力行Index", None),
-                "面積(ha)": area_per_day,
-                "推定機械日数_有効": md_per_day,
-            })
+            contrib_rows.append(
+                {
+                    "日付": d,
+                    "From": s,
+                    "To": e,
+                    "作物": r.get("作物", ""),
+                    "作業": r.get("作業", ""),
+                    "作業グループ": r.get("作業グループ", ""),
+                    "メモ": r.get("メモ", ""),
+                    "農機カテゴリ": r.get("農機カテゴリ", ""),
+                    "source": r.get("source", ""),
+                    "入力行Index": r.get("入力行Index", None),
+                    "面積(ha)": area_per_day,
+                    "推定機械日数_有効": md_per_day,
+                }
+            )
             d = d + dt.timedelta(days=1)
 
     if not totals:
         return pd.DataFrame(), pd.DataFrame()
 
     days = sorted(totals.keys())
-    df_day = pd.DataFrame({
-        "日付": days,
-        "推定機械日数_有効": [totals[d] for d in days],
-    })
+    df_day = pd.DataFrame({"日付": days, "推定機械日数_有効": [totals[d] for d in days]})
     df_day["容量(機械日/日)"] = float(utilization)
     df_day["利用率"] = np.where(df_day["容量(機械日/日)"] > 0, df_day["推定機械日数_有効"] / df_day["容量(機械日/日)"], np.nan)
+
     df_contrib = pd.DataFrame(contrib_rows)
+    df_contrib["作業表示"] = _work_label_col(df_contrib)
     return df_day, df_contrib
-
-def suggest_shifts_daily_peak(
-    df_sak: pd.DataFrame,
-    df_mach: pd.DataFrame,
-    df_tpl: pd.DataFrame,
-    df_exc: pd.DataFrame,
-    defaults: Defaults,
-    *,
-    farm: str,
-    window_start: dt.date,
-    window_end: dt.date,
-    bottleneck_cat: str,
-    utilization: float,
-    include_sources: List[str],
-    top_n: int = 10,
-    deltas: List[int] = [-20, -10, 10, 20],
-) -> pd.DataFrame:
-    """Try shifting sow/plant rows and evaluate max daily utilization in the target window for bottleneck machine category."""
-    ev0 = compute_task_events(df_sak, df_mach, df_tpl, df_exc, defaults, farm=farm, include_sources=include_sources)
-    day0, _ = daily_load_in_window(ev0, window_start=window_start, window_end=window_end, machine_cat=bottleneck_cat, utilization=utilization)
-    if day0 is None or day0.empty:
-        return pd.DataFrame()
-    peak0 = float(day0["利用率"].max())
-
-    farm_key = str(farm).strip()
-    sak_f = df_sak.copy()
-    sak_f["農家名"] = sak_f["農家名"].astype(str).str.strip()
-    sak_f = sak_f[sak_f["農家名"].astype(str).str.strip() == farm_key].copy()
-    sak_f["面積(ha)"] = pd.to_numeric(sak_f["面積(ha)"], errors="coerce")
-    sak_f = sak_f[sak_f["面積(ha)"].fillna(0) > 0].copy()
-    if sak_f.empty:
-        return pd.DataFrame()
-
-    cand = []
-    for i, r in sak_f.reset_index(drop=False).iterrows():
-        rng = sowplant_range_for_row(r, defaults)
-        if rng is None:
-            continue
-        cand.append((int(r["index"]), float(r["面積(ha)"])))
-    cand = sorted(cand, key=lambda x: x[1], reverse=True)[:max(1, int(top_n))]
-
-    out = []
-    for idx, area in cand:
-        base_row = df_sak.loc[idx].copy()
-        crop = str(base_row.get("作物", "")).strip()
-
-        allow_from = safe_date(base_row.get("播種/移植_開始日（参考）"))
-        allow_to = safe_date(base_row.get("播種/移植_終了日（参考）"))
-        rep = safe_date(base_row.get("播種/移植日（代表日・調整）"))
-        raw_range = _get_first_present(base_row, ["元入力(参考)", "播種/移植時期", "播種/移植時期(参考)", "播種・移植時期"])
-        if (allow_from is None or allow_to is None) and raw_range is not None:
-            base_year = rep.year if rep else dt.date.today().year
-            parsed = parse_jp_date_range(raw_range, base_year)
-            if parsed:
-                allow_from, allow_to = parsed
-        if allow_from is None or allow_to is None:
-            continue
-
-        used_rng = sowplant_range_for_row(base_row, defaults)
-        if used_rng is None:
-            continue
-        used_from, used_to, _ = used_rng
-
-        for delta in deltas:
-            new_from = used_from + dt.timedelta(days=delta)
-            new_to = used_to + dt.timedelta(days=delta)
-            if new_from < allow_from or new_to > allow_to:
-                continue
-
-            df_sak2 = df_sak.copy()
-            if "播種/移植日（代表日・調整）" in df_sak2.columns:
-                df_sak2.loc[idx, "播種/移植日（代表日・調整）"] = mid_date(new_from, new_to)
-            if "播種/移植_開始日（参考）" in df_sak2.columns:
-                df_sak2.loc[idx, "播種/移植_開始日（参考）"] = new_from
-            if "播種/移植_終了日（参考）" in df_sak2.columns:
-                df_sak2.loc[idx, "播種/移植_終了日（参考）"] = new_to
-            if "播種/移植日（from）" in df_sak2.columns:
-                df_sak2.loc[idx, "播種/移植日（from）"] = new_from
-            if "播種/移植日（to）" in df_sak2.columns:
-                df_sak2.loc[idx, "播種/移植日（to）"] = new_to
-
-            ev1 = compute_task_events(df_sak2, df_mach, df_tpl, df_exc, defaults, farm=farm, include_sources=include_sources)
-            day1, _ = daily_load_in_window(ev1, window_start=window_start, window_end=window_end, machine_cat=bottleneck_cat, utilization=utilization)
-            if day1 is None or day1.empty:
-                continue
-            peak1 = float(day1["利用率"].max())
-            out.append({
-                "入力行Index": idx + 1,
-                "作物": crop,
-                "面積(ha)": area,
-                "シフト(日)": delta,
-                "播種/移植_From(現状)": used_from,
-                "播種/移植_To(現状)": used_to,
-                "播種/移植_From(提案)": new_from,
-                "播種/移植_To(提案)": new_to,
-                "日単位ピーク利用率(現状)": peak0,
-                "日単位ピーク利用率(提案後)": peak1,
-                "改善(Δ)": peak0 - peak1,
-            })
-
-    if not out:
-        return pd.DataFrame()
-    return pd.DataFrame(out).sort_values(["改善(Δ)", "面積(ha)"], ascending=[False, False]).reset_index(drop=True)
 
 def sowplant_range_for_row(r: pd.Series, defaults: Defaults) -> Optional[Tuple[dt.date, dt.date, str]]:
     """Return (from,to,machine_cat) used for distribution. None if cannot decide."""
@@ -1052,12 +1068,13 @@ def sowplant_range_for_row(r: pd.Series, defaults: Defaults) -> Optional[Tuple[d
 
     return s_date, e_date, pick_sowplant_machine(crop)
 
-def compute_sowplant_distribution(df_sak: pd.DataFrame,
-                                  cap_long: pd.DataFrame,
-                                  defaults: Defaults) -> Tuple[pd.DataFrame, pd.DataFrame]:
+def compute_sowplant_distribution(
+    df_sak: pd.DataFrame,
+    cap_long: pd.DataFrame,
+    defaults: Defaults,
+) -> pd.DataFrame:
     cap_lu = cap_long.set_index(["農家名", "農機カテゴリ"])["能力(ha/日)"].to_dict()
     dist_rows = []
-    check_rows = []
 
     for idx, r in df_sak.reset_index(drop=True).iterrows():
         farm = str(r.get("農家名", "")).strip()
@@ -1080,29 +1097,6 @@ def compute_sowplant_distribution(df_sak: pd.DataFrame,
 
         period_days = (e_date - s_date).days + 1
         cap = cap_lu.get((farm, machine_cat), np.nan)
-
-        required_days = np.nan
-        shortage_days = np.nan
-        status = "不明"
-        if cap and not pd.isna(cap) and cap > 0:
-            required_days = area / cap
-            shortage_days = max(0.0, required_days - period_days)
-            status = "OK" if shortage_days <= 1e-9 else "不足"
-
-        check_rows.append({
-            "農家名": farm,
-            "作物": crop,
-            "面積(ha)": area,
-            "播種/移植_From": s_date,
-            "播種/移植_To": e_date,
-            "期間日数": period_days,
-            "使用農機カテゴリ": machine_cat,
-            "使用能力(ha/日)": cap,
-            "必要日数": required_days,
-            "不足日数": shortage_days,
-            "判定": status,
-            "入力行Index": idx + 1,
-        })
 
         # distribute across jun
         year_segments: List[Tuple[int, dt.date, dt.date]] = []
@@ -1143,7 +1137,7 @@ def compute_sowplant_distribution(df_sak: pd.DataFrame,
                     "入力行Index": idx + 1,
                 })
 
-    return pd.DataFrame(dist_rows), pd.DataFrame(check_rows)
+    return pd.DataFrame(dist_rows)
 
 def compute_template_tasks(df_sak: pd.DataFrame,
                            df_tpl: pd.DataFrame,
@@ -1622,7 +1616,7 @@ def compute_exceptions(df_sak: pd.DataFrame,
 
 def compute_all(df_sak: pd.DataFrame, df_mach: pd.DataFrame, df_tpl: pd.DataFrame, df_exc: pd.DataFrame, defaults: Defaults):
     cap_long = compute_farm_capacities(df_mach, defaults)
-    sow_dist, sow_check = compute_sowplant_distribution(df_sak, cap_long, defaults)
+    sow_dist = compute_sowplant_distribution(df_sak, cap_long, defaults)
     tpl_tasks = compute_template_tasks(df_sak, df_tpl, cap_long, defaults)
     exc_tasks = compute_exceptions(df_sak, df_exc, cap_long, defaults)
 
@@ -1636,7 +1630,7 @@ def compute_all(df_sak: pd.DataFrame, df_mach: pd.DataFrame, df_tpl: pd.DataFram
     tasks["旬番号"] = tasks["旬番号"].astype(int)
     tasks["旬ラベル"] = tasks["旬番号"].map(lambda x: jn_to_label(int(x)))
     tasks["月"] = ((tasks["旬番号"] - 1) // 3 + 1).astype(int)
-    return cap_long, tasks, sow_check
+    return cap_long, tasks
 
 def build_load_table(tasks: pd.DataFrame, farm: str, group_by: str, utilization: float, year: Optional[int]=None, detail: bool=False) -> pd.DataFrame:
     """Compute required machine-days per Jun/Month by machine category and compare to available days."""
@@ -1715,273 +1709,41 @@ def build_load_table(tasks: pd.DataFrame, farm: str, group_by: str, utilization:
     g["利用率"] = np.where(g["容量(機械日)"] > 0, g["推定機械日数_有効"] / g["容量(機械日)"], np.nan)
     return g.sort_values(["年","月","農機カテゴリ"]).reset_index(drop=True)
 
-def build_capacity_check(tasks: pd.DataFrame, farm: str, group_by: str, utilization: float, year: Optional[int]=None) -> pd.DataFrame:
-    """Return capacity check table across all tasks (template/sowplant/exception)."""
-    load = build_load_table(tasks, farm=farm, group_by=group_by, utilization=utilization, year=year, detail=False)
-    if load is None or load.empty:
-        return pd.DataFrame()
-
-    load = load.copy()
-    load["不足(機械日)"] = np.where(
-        load["容量(機械日)"] > 0,
-        np.maximum(0.0, load["推定機械日数_有効"] - load["容量(機械日)"]),
-        np.nan,
-    )
-    load["判定"] = np.where(load["不足(機械日)"].fillna(0.0) > 1e-9, "不足", "OK")
-    return load
-
-def suggest_shifts(
-    df_sak: pd.DataFrame,
-    df_mach: pd.DataFrame,
-    df_tpl: pd.DataFrame,
-    df_exc: pd.DataFrame,
-    defaults: Defaults,
-    farm: str,
-    utilization: float,
-    top_n: int = 10,
-    deltas: Optional[List[int]] = None,
-    group_by: str = "旬",
-) -> pd.DataFrame:
-    """
-    Simple heuristic:
-    - Compute current peak required rate (bottleneck across machine categories).
-    - For top N sow/plant rows by area in the selected farm, try shifting rep/from/to by given deltas (days).
-    - Keep shift within allowable range if 元入力(参考) gives range or if From/To are explicitly set.
-    - Return best candidates that reduce the peak required rate.
-    """
-    if deltas is None:
-        deltas = [-20, -10, 10, 20]
-
-    cap_long, tasks0, _ = compute_all(df_sak, df_mach, df_tpl, df_exc, defaults)
-    load0 = build_load_table(tasks0, farm=farm, group_by=group_by, utilization=utilization, detail=False)
-    if load0.empty:
-        return pd.DataFrame()
-    load0 = load0.copy()
-    load0["必要稼働率"] = np.where(
-        pd.to_numeric(load0.get("期間日数"), errors="coerce") > 0,
-        pd.to_numeric(load0.get("推定機械日数_有効"), errors="coerce") / pd.to_numeric(load0.get("期間日数"), errors="coerce"),
-        np.nan,
-    )
-    peak0 = float(load0["必要稼働率"].max())
-    peak0_row = load0.loc[load0["必要稼働率"].idxmax()]
-    if group_by == "月":
-        peak0_when = f'{int(peak0_row["年"])}年 {int(peak0_row["月"])}月'
-    else:
-        peak0_when = f'{int(peak0_row["年"])}年 {jn_to_label(int(peak0_row["旬番号"]))}'
-    peak0_cat = str(peak0_row.get("農機カテゴリ", "")).strip()
-    peak0_mdays = float(pd.to_numeric(peak0_row.get("推定機械日数_有効"), errors="coerce"))
-    peak0_cap = float(pd.to_numeric(peak0_row.get("容量(機械日)"), errors="coerce"))
-    peak0_days = float(pd.to_numeric(peak0_row.get("期間日数"), errors="coerce"))
-
-    farm_key = str(farm).strip()
-    sak_f = df_sak.copy()
-    sak_f["農家名"] = sak_f["農家名"].astype(str).str.strip()
-    sak_f = sak_f[sak_f["農家名"].astype(str).str.strip() == farm_key].copy()
-    sak_f["面積(ha)"] = pd.to_numeric(sak_f["面積(ha)"], errors="coerce")
-    sak_f = sak_f[sak_f["面積(ha)"].fillna(0) > 0].copy()
-    if sak_f.empty:
-        return pd.DataFrame()
-
-    # choose candidates: sow/plant meaningful rows (rep or range exists)
-    cand = []
-    for i, r in sak_f.reset_index(drop=False).iterrows():
-        rng = sowplant_range_for_row(r, defaults)
-        if rng is None:
-            continue
-        cand.append((int(r["index"]), float(r["面積(ha)"])))
-    cand = sorted(cand, key=lambda x: x[1], reverse=True)[:max(1, int(top_n))]
-
-    out = []
-    for idx, area in cand:
-        base_row = df_sak.loc[idx].copy()
-        crop = str(base_row.get("作物","")).strip()
-
-        # determine "used range" & "allowed range"
-        rng = sowplant_range_for_row(base_row, defaults)
-        if rng is None:
-            continue
-        used_from, used_to, _ = rng
-
-        # allowed range: parse 元入力(参考) if available; otherwise no hard constraint
-        # (播種/移植_開始日/終了日は編集対象なので、ここでは「固定制約」とみなさない)
-        allow_from = None
-        allow_to = None
-        raw_range = _get_first_present(base_row, ["元入力(参考)", "播種/移植時期", "播種/移植時期(参考)", "播種・移植時期"])
-        if raw_range is not None:
-            base_year = used_from.year if used_from is not None else dt.date.today().year
-            parsed = parse_jp_date_range(raw_range, base_year)
-            if parsed:
-                allow_from, allow_to = parsed
-
-        for delta in deltas:
-            # shift the whole window; if allowable range exists, keep within it
-            new_from = used_from + dt.timedelta(days=delta)
-            new_to = used_to + dt.timedelta(days=delta)
-            if allow_from is not None and new_from < allow_from:
-                continue
-            if allow_to is not None and new_to > allow_to:
-                continue
-
-            df_sak2 = df_sak.copy()
-            if "播種/移植日（代表日・調整）" in df_sak2.columns:
-                df_sak2.loc[idx, "播種/移植日（代表日・調整）"] = mid_date(new_from, new_to)
-            if "播種/移植_開始日（参考）" in df_sak2.columns:
-                df_sak2.loc[idx, "播種/移植_開始日（参考）"] = new_from
-            if "播種/移植_終了日（参考）" in df_sak2.columns:
-                df_sak2.loc[idx, "播種/移植_終了日（参考）"] = new_to
-            if "播種/移植日（from）" in df_sak2.columns:
-                df_sak2.loc[idx, "播種/移植日（from）"] = new_from
-            if "播種/移植日（to）" in df_sak2.columns:
-                df_sak2.loc[idx, "播種/移植日（to）"] = new_to
-
-            _, tasks1, _ = compute_all(df_sak2, df_mach, df_tpl, df_exc, defaults)
-            load1 = build_load_table(tasks1, farm=farm, group_by=group_by, utilization=utilization, detail=False)
-            if load1.empty:
-                continue
-            load1 = load1.copy()
-            load1["必要稼働率"] = np.where(
-                pd.to_numeric(load1.get("期間日数"), errors="coerce") > 0,
-                pd.to_numeric(load1.get("推定機械日数_有効"), errors="coerce") / pd.to_numeric(load1.get("期間日数"), errors="coerce"),
-                np.nan,
-            )
-            peak1 = float(load1["必要稼働率"].max())
-            peak1_row = load1.loc[load1["必要稼働率"].idxmax()]
-            if group_by == "月":
-                peak1_when = f'{int(peak1_row["年"])}年 {int(peak1_row["月"])}月'
-            else:
-                peak1_when = f'{int(peak1_row["年"])}年 {jn_to_label(int(peak1_row["旬番号"]))}'
-            peak1_cat = str(peak1_row.get("農機カテゴリ", "")).strip()
-            peak1_mdays = float(pd.to_numeric(peak1_row.get("推定機械日数_有効"), errors="coerce"))
-            peak1_cap = float(pd.to_numeric(peak1_row.get("容量(機械日)"), errors="coerce"))
-            peak1_days = float(pd.to_numeric(peak1_row.get("期間日数"), errors="coerce"))
-            out.append({
-                "入力行Index": idx + 1,
-                "作物": crop,
-                "面積(ha)": area,
-                "シフト(日)": delta,
-                "播種/移植_From(現状)": used_from,
-                "播種/移植_To(現状)": used_to,
-                "播種/移植_From(提案)": new_from,
-                "播種/移植_To(提案)": new_to,
-                "ピーク必要稼働率(現状)": peak0,
-                "ピーク必要稼働率(提案後)": peak1,
-                "ピーク時期(現状)": peak0_when,
-                "ボトルネック農機(現状)": peak0_cat,
-                "ピーク時期(提案後)": peak1_when,
-                "ボトルネック農機(提案後)": peak1_cat,
-                "ピーク必要日数(現状,機械日)": peak0_mdays,
-                "ピーク回せる日数(現状,機械日)": peak0_cap,
-                "ピーク超過(現状,機械日)": peak0_mdays - peak0_cap,
-                "ピーク期間日数(現状)": peak0_days,
-                "ピーク必要日数(提案後,機械日)": peak1_mdays,
-                "ピーク回せる日数(提案後,機械日)": peak1_cap,
-                "ピーク超過(提案後,機械日)": peak1_mdays - peak1_cap,
-                "ピーク期間日数(提案後)": peak1_days,
-                "改善(Δ)": peak0 - peak1,
-            })
-
-    if not out:
-        return pd.DataFrame()
-    res = pd.DataFrame(out).sort_values(["改善(Δ)","面積(ha)"], ascending=[False, False]).reset_index(drop=True)
-    return res
-
-def write_back_to_excel(original_bytes: bytes, df_sak_edited: pd.DataFrame, extra_sheets: Dict[str, pd.DataFrame]) -> bytes:
-    """
-    Update the uploaded workbook:
-    - overwrite '入力_作付' key input columns (same row alignment as pandas read header=3)
-    - add extra output sheets
-    """
-    from io import BytesIO
-    bio = BytesIO(original_bytes)
-    wb = load_workbook(bio)
-    if "入力_作付" not in wb.sheetnames:
-        raise ValueError("入力_作付 シートが見つかりません。")
-
-    ws = wb["入力_作付"]
-
-    # find header row index: we assume header at row 4 (header=3 in pandas)
-    header_row = 4
-    # map header text -> column index
-    header_map = {}
-    for col in range(1, ws.max_column + 1):
-        v = ws.cell(row=header_row, column=col).value
-        if v is None:
-            continue
-        header_map[str(v).strip()] = col
-
-    df = normalize_df_sak(df_sak_edited.reset_index(drop=True).copy())
-
-    # internal df column -> possible excel header names (write to whichever exists)
-    col_targets: Dict[str, List[str]] = {
-        "農家名": ["農家名"],
-        "作物": ["作物"],
-        "面積(ha)": ["面積(ha)", "作業期間ごとの面積(ha)"],
-        "播種/移植日（from）": ["播種/移植日（from）", "播種/移植日(from)", "播種/移植_From"],
-        "播種/移植日（to）": ["播種/移植日（to）", "播種/移植日(to)", "播種/移植_To"],
-        "播種/移植_開始日（参考）": ["播種/移植_開始日（参考）"],
-        "播種/移植_終了日（参考）": ["播種/移植_終了日（参考）"],
-        "播種/移植日（代表日・調整）": ["播種/移植日（代表日・調整）"],
-        "作期日数(上書き)": ["作期日数(上書き)", "作期日数"],
-        "収穫日(上書き)": ["収穫日(上書き)", "収穫日"],
-        "元入力(参考)": ["元入力(参考)", "播種/移植時期", "播種/移植時期(参考)", "播種・移植時期"],
-    }
-
-    # If representative date is missing but From/To exist, fill it with midpoint for compatibility.
-    if (
-        "播種/移植日（代表日・調整）" in df.columns
-        and "播種/移植日（from）" in df.columns
-        and "播種/移植日（to）" in df.columns
-    ):
-        rep = df["播種/移植日（代表日・調整）"].apply(safe_date)
-        sdt = df["播種/移植日（from）"].apply(safe_date)
-        edt = df["播種/移植日（to）"].apply(safe_date)
-        for i in range(len(df)):
-            if rep.iloc[i] is None and sdt.iloc[i] is not None and edt.iloc[i] is not None:
-                df.loc[i, "播種/移植日（代表日・調整）"] = mid_date(sdt.iloc[i], edt.iloc[i])
-
-    # write rows starting at row 5
-    start_row = header_row + 1
-    for i in range(len(df)):
-        r_excel = start_row + i
-        for src_col, headers in col_targets.items():
-            if src_col not in df.columns:
-                continue
-            for h in headers:
-                if h not in header_map:
-                    continue
-                col = header_map[h]
-                val = df.loc[i, src_col]
-                if isinstance(val, dt.date) and not isinstance(val, dt.datetime):
-                    val = dt.datetime(val.year, val.month, val.day)
-                ws.cell(row=r_excel, column=col, value=val)
-
-    # add extra sheets
-    for name, df_out in extra_sheets.items():
-        if name in wb.sheetnames:
-            del wb[name]
-        ws2 = wb.create_sheet(title=name[:31])
-        # write header
-        for j, colname in enumerate(df_out.columns, start=1):
-            ws2.cell(row=1, column=j, value=str(colname))
-        # write data
-        for i, row in enumerate(df_out.itertuples(index=False), start=2):
-            for j, v in enumerate(row, start=1):
-                if isinstance(v, dt.date) and not isinstance(v, dt.datetime):
-                    v = dt.datetime(v.year, v.month, v.day)
-                ws2.cell(row=i, column=j, value=v)
-        # basic column widths
-        for j in range(1, min(25, len(df_out.columns)) + 1):
-            ws2.column_dimensions[get_column_letter(j)].width = 14
-
-    out_bio = BytesIO()
-    wb.save(out_bio)
-    return out_bio.getvalue()
-
 # ----------------------------
 # Streamlit UI
 # ----------------------------
 
 st.set_page_config(page_title="CS Board Hybrid Viewer v2", layout="wide")
+try:
+    st.set_option("browser.gatherUsageStats", False)
+except Exception:
+    pass
+components.html(
+    """
+<script>
+(() => {
+  try {
+    const keys = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (!k) continue;
+      const kl = String(k).toLowerCase();
+      if (kl.includes("anonymous") || kl.includes("anon")) keys.push(k);
+      if (kl.includes("streamlit") && (kl.includes("id") || kl.includes("metrics"))) keys.push(k);
+    }
+    const uniq = Array.from(new Set(keys));
+    uniq.forEach((k) => {
+      const v = localStorage.getItem(k);
+      if (!v) return;
+      try { JSON.parse(v); }
+      catch (e) { localStorage.removeItem(k); }
+    });
+  } catch (e) {}
+})();
+</script>
+""",
+    height=0,
+)
 st.title("CS Board")
 
 def _date_col_config(cols: List[str]):
@@ -2247,10 +2009,10 @@ with st.sidebar.expander("稼働率とは？（注意点）", expanded=False):
     st.caption("※ 本アプリは「農機を使う作業のみ」を対象に「機械稼働（ha/日）→ 推定機械日数」を計算します（手作業・資材準備などは除外）。ピークは農機カテゴリ別のボトルネックで判定します。")
 
 # Recompute baseline and edited
-cap_long, tasks_edit, sow_check = compute_all(st.session_state.df_sak_edit, df_mach, df_tpl, df_exc, defaults)
+cap_long, tasks_edit = compute_all(st.session_state.df_sak_edit, df_mach, df_tpl, df_exc, defaults)
 tasks_edit = tasks_edit[tasks_edit["source"].isin(ALL_SOURCES)].copy()
 
-_, tasks_base, _ = compute_all(df_sak_raw, df_mach, df_tpl, df_exc, defaults)
+_, tasks_base = compute_all(df_sak_raw, df_mach, df_tpl, df_exc, defaults)
 tasks_base = tasks_base[tasks_base["source"].isin(ALL_SOURCES)].copy()
 
 st.subheader("生産者")
@@ -2826,7 +2588,7 @@ else:
                     return df_all, prev
 
                 def _peak_summary(df_sak_any: pd.DataFrame) -> Optional[Dict]:
-                    _, tasks_any, _ = compute_all(df_sak_any, df_mach, df_tpl, df_exc, defaults)
+                    _, tasks_any = compute_all(df_sak_any, df_mach, df_tpl, df_exc, defaults)
                     tasks_any = tasks_any[tasks_any["source"].isin(ALL_SOURCES)].copy()
                     load_any = build_load_table(tasks_any, farm=farm_sel, group_by=gran, utilization=utilization, detail=False)
                     if load_any is None or load_any.empty:
@@ -2932,6 +2694,12 @@ if df.empty:
     st.warning("フィルター条件でデータがありません。")
     st.stop()
 
+def _persist_workload_cat():
+    st.session_state["workload_machine_cat_persist"] = str(st.session_state.get("workload_machine_cat_sel", "全て"))
+
+def _persist_workload_daily():
+    st.session_state["workload_daily_persist"] = bool(st.session_state.get("workload_daily_drilldown_toggle", False))
+
 def _top_crops_text(d: pd.DataFrame, n: int = 6) -> str:
     if d is None or d.empty or "作物" not in d.columns:
         return ""
@@ -2943,11 +2711,6 @@ def _top_crops_text(d: pd.DataFrame, n: int = 6) -> str:
     if len(crops) <= n:
         return " / ".join(crops)
     return " / ".join(crops[:n]) + f" (+{len(crops) - n})"
-def _work_label_col(df_in: pd.DataFrame) -> pd.Series:
-    g = df_in.get("作業グループ", "").fillna("").astype(str).str.strip()
-    m = df_in.get("メモ", "").fillna("").astype(str).str.strip()
-    m = m.where(~m.str.lower().isin({"nan", "none"}), "")
-    return np.where(m != "", g + "(" + m + ")", g)
 
 def _top_cats_text(d: pd.DataFrame, n: int = 6) -> str:
     if d is None or d.empty or "農機カテゴリ" not in d.columns:
@@ -2967,6 +2730,26 @@ def _required_rate(df: pd.DataFrame) -> pd.Series:
     d = pd.to_numeric(df.get("期間日数"), errors="coerce")
     m = pd.to_numeric(df.get("推定機械日数_有効"), errors="coerce")
     return np.where(d > 0, m / d, np.nan)
+
+def _period_days_table_by_gran(keys_df: pd.DataFrame, *, gran: str) -> pd.DataFrame:
+    out = keys_df.drop_duplicates().copy()
+    if gran == "旬":
+        out["期間日数"] = out.apply(lambda r: jun_days(int(r["年"]), int(r["旬番号"])), axis=1)
+        out["ラベル"] = out["旬ラベル"].astype(str)
+        return out
+    out["期間日数"] = out.apply(lambda r: calendar.monthrange(int(r["年"]), int(r["月"]))[1], axis=1)
+    out["ラベル"] = out["月"].astype(int).astype(str) + "月"
+    return out
+
+def _bottleneck_by_period(t: pd.DataFrame, keys: List[str], *, gran: str) -> pd.DataFrame:
+    g = t.groupby(keys + ["農機カテゴリ"], as_index=False).agg({"推定機械日数_有効": "sum"})
+    pdays = _period_days_table_by_gran(g[keys], gran=gran)
+    g = g.merge(pdays[keys + ["期間日数", "ラベル"]], on=keys, how="left")
+    g["必要稼働率"] = np.where(pd.to_numeric(g["期間日数"], errors="coerce") > 0, g["推定機械日数_有効"] / g["期間日数"], np.nan)
+    idx = g.groupby(keys)["必要稼働率"].idxmax()
+    bn = g.loc[idx, keys + ["農機カテゴリ", "必要稼働率", "期間日数", "ラベル"]].copy()
+    bn = bn.rename(columns={"農機カテゴリ": "ボトルネック農機カテゴリ"})
+    return bn
 
 color_col = "作業表示" if breakdown == "作業別" else "作物"
 
@@ -2995,25 +2778,209 @@ if default_cat:
     cat_options.append(default_cat)
 cat_options.extend([c for c in cats_in_scope if default_cat is None or c != peak_cat])
 cat_sel_key = "workload_machine_cat_sel"
-cat_sel = st.selectbox("労働負荷グラフの農機カテゴリ", cat_options, index=0, key=cat_sel_key)
+colW1, colW2 = st.columns([3, 2], vertical_alignment="bottom")
+with colW1:
+    if "workload_machine_cat_persist" not in st.session_state:
+        st.session_state["workload_machine_cat_persist"] = "全て"
+    # If this run didn't reach the workload section previously (e.g. rerun in another section),
+    # Streamlit may drop widget states; restore from persist.
+    if cat_sel_key not in st.session_state:
+        st.session_state[cat_sel_key] = st.session_state["workload_machine_cat_persist"]
+    if st.session_state.get(cat_sel_key) not in cat_options:
+        st.session_state[cat_sel_key] = cat_options[0]
+    cat_sel = st.selectbox(
+        "農機カテゴリ",
+        cat_options,
+        index=0,
+        key=cat_sel_key,
+        help="「全て」は各旬/月の“ボトルネック農機カテゴリ”のみ表示します。",
+        on_change=_persist_workload_cat,
+    )
 
-cap_line = None
 cap_cat = None
-cap_multiplier = 1
-cap_ha_day = None
 if cat_sel.startswith("ボトルネック（") and "peak_cat" in locals():
     cap_cat = peak_cat
 elif cat_sel != "全て":
     cap_cat = cat_sel
 
-st.caption("y軸は『必要稼働率（=推定機械日数÷期間日数）』です。赤線は設定した『農機稼働率％』で、これを超えると回し切れない目安です。")
-if cat_sel == "全て":
-    st.info("注意：『全て』は各旬/月で“ボトルネック農機カテゴリ”だけを表示します。作業の全量や分散の詳細は、農機カテゴリ（sprayer/tractor…）を選んで確認してください。")
+with colW2:
+    if "workload_daily_persist" not in st.session_state:
+        st.session_state["workload_daily_persist"] = False
+    if "workload_daily_drilldown_toggle" not in st.session_state:
+        st.session_state["workload_daily_drilldown_toggle"] = st.session_state["workload_daily_persist"]
+    drilldown_daily = st.toggle(
+        "日別（全期間）",
+        value=False,
+        key="workload_daily_drilldown_toggle",
+        help="日付ごとの負荷（推定機械日数/日）に落として確認します。",
+        on_change=_persist_workload_daily,
+    )
 
-if cap_cat:
-    cap_s = cap_long[(cap_long["農家名"].astype(str).str.strip() == str(farm_sel).strip()) & (cap_long["農機カテゴリ"] == cap_cat)]["能力(ha/日)"]
-    if not cap_s.empty and not pd.isna(cap_s.iloc[0]):
-        cap_ha_day = float(cap_s.iloc[0])
+with st.expander("表示の説明", expanded=False):
+    st.caption("y軸：必要稼働率（= 推定機械日数 ÷ 期間日数）。赤線：設定した農機稼働率％（超えると回し切れない目安）。")
+    st.caption("「全て」：各旬/月のボトルネック農機カテゴリのみを表示（詳細は農機カテゴリを選択）。")
+if drilldown_daily:
+    def _build_daily_plot_for_sak(df_sak_src: pd.DataFrame, *, scen_label: str) -> Tuple[pd.DataFrame, pd.DataFrame, Tuple[dt.date, dt.date], str]:
+        ev = compute_task_events(
+            df_sak_src,
+            df_mach,
+            df_tpl,
+            df_exc,
+            defaults,
+            farm=farm_sel,
+            include_sources=ALL_SOURCES,
+        )
+        if ev is None or ev.empty or ("From" not in ev.columns) or ("To" not in ev.columns):
+            return pd.DataFrame(), pd.DataFrame(), (dt.date.today(), dt.date.today()), ""
+
+        ev2 = ev.dropna(subset=["From", "To"]).copy()
+        if ev2.empty:
+            return pd.DataFrame(), pd.DataFrame(), (dt.date.today(), dt.date.today()), ""
+
+        w_start = min(ev2["From"].min(), ev2["To"].min())
+        w_end = max(ev2["From"].max(), ev2["To"].max())
+
+        _, contrib_df = daily_load_in_window(
+            ev2,
+            window_start=w_start,
+            window_end=w_end,
+            machine_cat=cap_cat,
+            utilization=float(utilization),
+        )
+
+        contrib_use = contrib_df.copy() if contrib_df is not None else pd.DataFrame()
+        if contrib_use is None or contrib_use.empty:
+            return pd.DataFrame(), pd.DataFrame(), (w_start, w_end), ""
+
+        cat_label = cap_cat if cap_cat else "全て"
+        if cap_cat is None and "農機カテゴリ" in contrib_use.columns:
+            day_cat = (
+                contrib_use.groupby(["日付", "農機カテゴリ"], as_index=False)["推定機械日数_有効"]
+                .sum()
+                .sort_values(["日付", "推定機械日数_有効"], ascending=[True, False])
+            )
+            idx = day_cat.groupby("日付")["推定機械日数_有効"].idxmax()
+            day_bn = day_cat.loc[idx, ["日付", "農機カテゴリ"]].rename(columns={"農機カテゴリ": "ボトルネック農機カテゴリ"})
+            contrib_use = contrib_use.merge(day_bn, on="日付", how="left")
+            contrib_use = contrib_use[contrib_use["農機カテゴリ"] == contrib_use["ボトルネック農機カテゴリ"]].copy()
+            cat_label = "ボトルネック（全て）"
+        else:
+            if "農機カテゴリ" in contrib_use.columns:
+                contrib_use["ボトルネック農機カテゴリ"] = contrib_use["農機カテゴリ"]
+
+        plot_day = (
+            contrib_use.groupby(["日付", "ボトルネック農機カテゴリ", "作業表示"], as_index=False)
+            .agg({"推定機械日数_有効": "sum", "面積(ha)": "sum", "From": "min", "To": "max"})
+            .rename(columns={"ボトルネック農機カテゴリ": "農機カテゴリ"})
+        )
+        plot_day["シナリオ"] = scen_label
+        plot_day = plot_day.sort_values(["日付", "推定機械日数_有効"], ascending=[True, False])
+
+        tbl = plot_day.copy()
+        tbl["必要日数(機械日)"] = pd.to_numeric(tbl.get("推定機械日数_有効"), errors="coerce")
+        tbl["面積(ha)"] = pd.to_numeric(tbl.get("面積(ha)"), errors="coerce")
+        tbl = (
+            tbl.groupby(["シナリオ", "From", "To", "農機カテゴリ", "作業表示"], as_index=False)[["面積(ha)", "必要日数(機械日)"]]
+            .sum()
+            .sort_values(["シナリオ", "必要日数(機械日)", "面積(ha)"], ascending=[True, False, False])
+        )
+        return plot_day, tbl, (w_start, w_end), cat_label
+
+    plot_rows = []
+    table_rows = []
+    window_min = None
+    window_max = None
+    cat_label_any = cap_cat if cap_cat else "全て"
+
+    if compare_mode:
+        p0, t0, (s0, e0), cat0 = _build_daily_plot_for_sak(df_sak_raw, scen_label="編集前")
+        if not p0.empty:
+            plot_rows.append(p0)
+        if not t0.empty:
+            table_rows.append(t0)
+        if s0 and e0:
+            window_min = s0 if window_min is None else min(window_min, s0)
+            window_max = e0 if window_max is None else max(window_max, e0)
+        if cat0:
+            cat_label_any = cat0
+
+    p1, t1, (s1, e1), cat1 = _build_daily_plot_for_sak(st.session_state.df_sak_edit, scen_label="編集後")
+    if not p1.empty:
+        plot_rows.append(p1)
+    if not t1.empty:
+        table_rows.append(t1)
+    if s1 and e1:
+        window_min = s1 if window_min is None else min(window_min, s1)
+        window_max = e1 if window_max is None else max(window_max, e1)
+    if cat1:
+        cat_label_any = cat1
+
+    if not plot_rows:
+        st.info("日別データがありません（播種/移植のFrom/Toや作業テンプレの設定をご確認ください）。")
+    else:
+        plot_day_all = pd.concat(plot_rows, ignore_index=True)
+        if window_min is None or window_max is None:
+            window_min = dt.date.today()
+            window_max = dt.date.today()
+
+        if compare_mode and "シナリオ" in plot_day_all.columns:
+            scen_order = ["編集前", "編集後"]
+            plot_day_all["シナリオ"] = pd.Categorical(plot_day_all["シナリオ"], categories=scen_order, ordered=True)
+        fig_day = px.bar(
+            plot_day_all,
+            x="日付",
+            y="推定機械日数_有効",
+            color="作業表示",
+            barmode="stack",
+            facet_col="シナリオ" if compare_mode else None,
+            color_discrete_sequence=px.colors.qualitative.Safe,
+            custom_data=["From", "To", "農機カテゴリ"],
+            category_orders={"シナリオ": ["編集前", "編集後"]} if compare_mode else None,
+            title=f"{farm_sel}｜{window_min}〜{window_max}｜日別 推定機械日数（{cat_label_any}）",
+        )
+        fig_day.update_traces(
+            marker_line_width=0,
+            hovertemplate="日付: %{x}<br>期間: %{customdata[0]}〜%{customdata[1]}<br>農機: %{customdata[2]}<br>作業: %{fullData.name}<br>推定機械日数: %{y:.3f}<extra></extra>",
+        )
+        if compare_mode:
+            for tr in fig_day.data:
+                # facet_col puts the second panel on x2/y2 (right side)
+                if getattr(tr, "xaxis", "x") == "x2":
+                    tr.marker.pattern = dict(
+                        shape="/",
+                        solidity=0.25,
+                        size=6,
+                        fgcolor="rgba(0,0,0,0.35)",
+                    )
+        fig_day.update_layout(template="plotly_white", height=460, margin=dict(t=70, r=20, b=40, l=60))
+        fig_day.add_hline(y=float(utilization), line_dash="dash", line_color="red")
+        fig_day.update_yaxes(rangemode="tozero")
+        st.plotly_chart(fig_day, use_container_width=True)
+
+        st.caption("日別の内訳（全期間）")
+        if table_rows:
+            tbl_all = pd.concat(table_rows, ignore_index=True)
+            show_cols = ["From", "To", "農機カテゴリ", "作業表示", "面積(ha)", "必要日数(機械日)"]
+            if compare_mode:
+                scen_order = ["編集前", "編集後"]
+                if "シナリオ" in tbl_all.columns:
+                    tbl_all["シナリオ"] = pd.Categorical(tbl_all["シナリオ"], categories=scen_order, ordered=True)
+                tbl_all = tbl_all.sort_values(["シナリオ", "必要日数(機械日)", "面積(ha)"], ascending=[True, False, False])
+                show_cols = ["シナリオ"] + show_cols
+            else:
+                tbl_all = tbl_all.sort_values(["必要日数(機械日)", "面積(ha)"], ascending=[False, False])
+            st.dataframe(
+                tbl_all[show_cols],
+                use_container_width=True,
+                height=380,
+                hide_index=True,
+                column_config={
+                    "面積(ha)": st.column_config.NumberColumn(format="%.3f"),
+                    "必要日数(機械日)": st.column_config.NumberColumn(format="%.3f"),
+                },
+            )
+        else:
+            st.info("日別の内訳データがありません。")
 
 if gran == "旬":
     group_by = "旬"
@@ -3032,26 +2999,9 @@ for scen_name, tasks_src in [("編集後", tasks_edit), ("現状", tasks_base)]:
     scenario_tasks.append(t)
 
 def _period_days_table(keys_df: pd.DataFrame) -> pd.DataFrame:
-    out = keys_df.drop_duplicates().copy()
-    if group_by == "旬":
-        out["期間日数"] = out.apply(lambda r: jun_days(int(r["年"]), int(r["旬番号"])), axis=1)
-        out["ラベル"] = out["旬ラベル"].astype(str)
-    else:
-        out["期間日数"] = out.apply(lambda r: calendar.monthrange(int(r["年"]), int(r["月"]))[1], axis=1)
-        out["ラベル"] = out["月"].astype(int).astype(str) + "月"
-    return out
+    return _period_days_table_by_gran(keys_df, gran=group_by)
 
-def _bottleneck_by_period(t: pd.DataFrame, keys: List[str]) -> pd.DataFrame:
-    g = t.groupby(keys + ["農機カテゴリ"], as_index=False).agg({"推定機械日数_有効": "sum"})
-    pdays = _period_days_table(g[keys])
-    g = g.merge(pdays[keys + ["期間日数", "ラベル"]], on=keys, how="left")
-    g["必要稼働率"] = np.where(pd.to_numeric(g["期間日数"], errors="coerce") > 0, g["推定機械日数_有効"] / g["期間日数"], np.nan)
-    idx = g.groupby(keys)["必要稼働率"].idxmax()
-    bn = g.loc[idx, keys + ["農機カテゴリ", "必要稼働率", "期間日数", "ラベル"]].copy()
-    bn = bn.rename(columns={"農機カテゴリ": "ボトルネック農機カテゴリ"})
-    return bn
-
-if scenario_tasks:
+if (not drilldown_daily) and scenario_tasks:
     t_all = pd.concat(scenario_tasks, ignore_index=True)
     if group_by == "旬":
         period_keys = ["年", "旬番号", "旬ラベル"]
@@ -3082,7 +3032,7 @@ if scenario_tasks:
             # 全て: 各旬/月ごとの「ボトルネック農機カテゴリ」だけに絞って表示（= 稼働限界に対する利用率が意味を持つ）
             if t.empty:
                 continue
-            bn = _bottleneck_by_period(t, period_keys)
+            bn = _bottleneck_by_period(t, period_keys, gran=group_by)
             t = t.merge(bn[period_keys + ["ボトルネック農機カテゴリ"]], on=period_keys, how="inner")
             t = t[t["農機カテゴリ"] == t["ボトルネック農機カテゴリ"]].copy()
             if t.empty:
@@ -3133,7 +3083,7 @@ if scenario_tasks:
             )
             g = g.merge(wtxt, on=work_cols, how="left")
 
-        pdays = _period_days_table(g[period_keys])
+        pdays = _period_days_table_by_gran(g[period_keys], gran=group_by)
         g = g.merge(pdays[period_keys + ["期間日数", "ラベル"]], on=period_keys, how="left")
         g["必要稼働率"] = np.where(
             pd.to_numeric(g["期間日数"], errors="coerce") > 0,
@@ -3188,6 +3138,15 @@ if scenario_tasks:
             legend=dict(orientation="h", yanchor="top", y=1.20, xanchor="left", x=0, title_text=""),
             margin=dict(t=190, r=20, b=110, l=60),
         )
+        if compare_mode:
+            for tr in fig.data:
+                if getattr(tr, "xaxis", "x") == "x2":
+                    tr.marker.pattern = dict(
+                        shape="/",
+                        solidity=0.25,
+                        size=6,
+                        fgcolor="rgba(0,0,0,0.35)",
+                    )
         # Red line: keep it simple (annotations tend to overlap when comparing scenarios)
         fig.add_hline(y=float(utilization), line_dash="dash", line_color="red")
         if group_by == "旬":
@@ -3590,10 +3549,10 @@ if scenario_tasks:
                     )
     else:
         st.info("データがありません。入力をご確認ください。")
-else:
+elif not drilldown_daily:
     st.info("データがありません。入力をご確認ください。")
 
-if cat_sel == "全て" and farm_sel:
+if (not drilldown_daily) and cat_sel == "全て" and farm_sel:
     with st.expander("全て表示：ピーク必要稼働率（最大）の根拠（どの農機が詰まっているか）", expanded=False):
         rows = []
         for scen_name, tasks_src in [("編集後", tasks_edit), ("現状", tasks_base)]:
@@ -3654,7 +3613,6 @@ with st.expander("レポート（HTML → 印刷でPDF保存）", expanded=False
             )
 
         # ---- Report data (旬固定)
-        report_breakdown = "作業別"
         report_gran = "旬"
         report_util = float(utilization)
 
@@ -3679,27 +3637,6 @@ with st.expander("レポート（HTML → 印刷でPDF保存）", expanded=False
             peak_cat_r = str(peak_row_edit.get("農機カテゴリ", "")).strip()
 
         # ---- Workload chart (旬 / 全て=ボトルネック / 作業別)
-        def _work_label_col(df_in: pd.DataFrame) -> pd.Series:
-            g = df_in.get("作業グループ", "").fillna("").astype(str).str.strip()
-            m = df_in.get("メモ", "").fillna("").astype(str).str.strip()
-            m = m.where(~m.str.lower().isin({"nan", "none"}), "")
-            return np.where(m != "", g + "(" + m + ")", g)
-
-        def _period_days_jun(keys_df: pd.DataFrame) -> pd.DataFrame:
-            out = keys_df.drop_duplicates().copy()
-            out["期間日数"] = out.apply(lambda r: jun_days(int(r["年"]), int(r["旬番号"])), axis=1)
-            out["ラベル"] = out["旬ラベル"].astype(str)
-            return out
-
-        def _bottleneck_by_period(t: pd.DataFrame, keys: List[str]) -> pd.DataFrame:
-            g = t.groupby(keys + ["農機カテゴリ"], as_index=False).agg({"推定機械日数_有効": "sum"})
-            pdays = _period_days_jun(g[keys])
-            g = g.merge(pdays[keys + ["期間日数", "ラベル"]], on=keys, how="left")
-            g["必要稼働率"] = np.where(pd.to_numeric(g["期間日数"], errors="coerce") > 0, g["推定機械日数_有効"] / g["期間日数"], np.nan)
-            idx = g.groupby(keys)["必要稼働率"].idxmax()
-            bn = g.loc[idx, keys + ["農機カテゴリ", "必要稼働率", "期間日数", "ラベル"]].copy()
-            bn = bn.rename(columns={"農機カテゴリ": "ボトルネック農機カテゴリ"})
-            return bn
 
         period_keys = ["年", "旬番号", "旬ラベル"]
         sort_cols = ["年", "旬番号"]
@@ -3725,7 +3662,7 @@ with st.expander("レポート（HTML → 印刷でPDF保存）", expanded=False
             t_all = pd.concat(scenario_tasks_r, ignore_index=True)
             plot_rows = []
             for scen_name, t in t_all.groupby("シナリオ"):
-                bn = _bottleneck_by_period(t, period_keys)
+                bn = _bottleneck_by_period(t, period_keys, gran="旬")
                 t2 = t.merge(bn[period_keys + ["ボトルネック農機カテゴリ"]], on=period_keys, how="inner")
                 t2 = t2[t2["農機カテゴリ"] == t2["ボトルネック農機カテゴリ"]].copy()
                 if t2.empty:
@@ -3733,7 +3670,7 @@ with st.expander("レポート（HTML → 印刷でPDF保存）", expanded=False
                 g = t2.groupby(period_keys + ["農機カテゴリ", "作業表示"], as_index=False).agg(
                     {"推定機械日数_有効": "sum", "面積(ha)": "sum"}
                 )
-                pdays = _period_days_jun(g[period_keys])
+                pdays = _period_days_table_by_gran(g[period_keys], gran="旬")
                 g = g.merge(pdays[period_keys + ["期間日数", "ラベル"]], on=period_keys, how="left")
                 g["必要稼働率"] = np.where(
                     pd.to_numeric(g["期間日数"], errors="coerce") > 0,
@@ -4066,19 +4003,3 @@ with st.expander("レポート（HTML → 印刷でPDF保存）", expanded=False
 with st.expander("計算済み明細（CSV）", expanded=False):
     csv = df.to_csv(index=False).encode("utf-8-sig")
     st.download_button("CSVダウンロード（計算済み明細）", data=csv, file_name=f"{farm_sel}_tasks.csv", mime="text/csv")
-
-with st.expander("更新したExcelをダウンロード", expanded=False):
-    extra = {
-        "streamlit_tasks": df.copy(),
-    }
-    if st.button("Excelを生成", key="btn_build_excel"):
-        try:
-            out_bytes = write_back_to_excel(uploaded.getvalue(), st.session_state.df_sak_edit, extra)
-            st.download_button(
-                "Excelダウンロード（入力更新 + 出力シート追加）",
-                data=out_bytes,
-                file_name="CS_board_streamlit_updated.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            )
-        except Exception as e:
-            st.error(f"Excel生成に失敗しました: {e}")
