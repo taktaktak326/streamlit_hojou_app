@@ -17,7 +17,10 @@ import streamlit as st
 import folium
 from shapely.geometry.base import BaseGeometry
 from shapely.wkt import loads as wkt_loads
-from shapely.errors import WKTReadingError
+try:
+    from shapely.errors import ShapelyError
+except Exception:  # pragma: no cover
+    ShapelyError = Exception
 from streamlit_folium import folium_static
 
 
@@ -402,7 +405,7 @@ def safe_load_wkt(wkt_str):
         return None
     try:
         return wkt_loads(wkt_str)
-    except (WKTReadingError, UnicodeDecodeError, ValueError):
+    except (ShapelyError, UnicodeDecodeError, ValueError):
         return None
 
 
