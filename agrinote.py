@@ -164,6 +164,16 @@ if st.session_state.fields:
             hide_index=True
         )
 
+        # CSVダウンロード
+        csv_df = edited_df.drop(columns=["選択"]).sort_values(by=["カラー", "圃場名"])
+        csv = csv_df.to_csv(index=False).encode('utf-8-sig')
+        st.download_button(
+            label="📥 圃場リストをCSVでダウンロード",
+            data=csv,
+            file_name="agrinote_fields.csv",
+            mime="text/csv",
+        )
+
         selected_ids = edited_df[edited_df["選択"] == True]["ID"].tolist()
         selected_fields = [f for f in filtered_fields if f["id"] in selected_ids]
 
@@ -215,4 +225,3 @@ if st.session_state.fields:
             st.info("🔍 圃場を選択してください")
     else:
         st.warning("フィルター条件に一致する圃場がありません。")
-        
