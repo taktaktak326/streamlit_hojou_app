@@ -21,6 +21,17 @@ st.markdown(
 [data-testid="stSidebar"] { background: #ffffff; border-right: 1px solid rgba(17,24,39,0.08); }
 html { color-scheme: light; }
 
+/* ---- Ensure readable text on light ---- */
+[data-testid="stAppViewContainer"] { color: #111827; }
+[data-testid="stSidebar"] * { color: #111827; }
+label, p, li, small, summary { color: #111827; }
+div[data-testid="stCaptionContainer"], div[data-testid="stCaptionContainer"] * { color: rgba(17,24,39,0.70); }
+div[data-testid="stMetricValue"] { color: #111827; }
+div[data-testid="stMetricLabel"] { color: rgba(17,24,39,0.70); }
+button[role="tab"] { color: rgba(17,24,39,0.80) !important; }
+button[role="tab"][aria-selected="true"] { color: rgba(17,24,39,0.95) !important; }
+code { color: #111827; background: rgba(17,24,39,0.06); padding: 0.10rem 0.30rem; border-radius: 8px; }
+
 /* ---- Typography ---- */
 html, body, [class*="css"] { font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", "Noto Sans JP", "Hiragino Sans", "Helvetica Neue", Arial; }
 h1, h2, h3 { letter-spacing: -0.02em; }
