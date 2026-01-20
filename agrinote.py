@@ -104,6 +104,40 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
+def extract_polygon_latlng(field: dict) -> list[tuple[float, float]]:
+    coords: list[tuple[float, float]] = []
+    for pt in field.get("region_latlngs") or []:
+        try:
+            lat = float(pt.get("lat"))
+            lng = float(pt.get("lng"))
+        except (TypeError, ValueError):
+            continue
+        coords.append((lat, lng))
+    return coords
+
+
+def extract_polygon_lnglat(field: dict) -> list[tuple[float, float]]:
+    coords: list[tuple[float, float]] = []
+    for pt in field.get("region_latlngs") or []:
+        try:
+            lat = float(pt.get("lat"))
+            lng = float(pt.get("lng"))
+        except (TypeError, ValueError):
+            continue
+        coords.append((lng, lat))
+    return coords
+
+
+def extract_center_latlng(field: dict) -> tuple[float, float] | None:
+    center = field.get("center_latlng") or {}
+    try:
+        lat = float(center.get("lat"))
+        lng = float(center.get("lng"))
+    except (TypeError, ValueError):
+        return None
+    return lat, lng
+
+
 def build_field_block_indexes(field_blocks: list[dict] | None):
     if not field_blocks:
         return {}, {}
@@ -358,11 +392,27 @@ if st.session_state.fields:
 
         with tab_map:
             st.subheader("圃場マップ")
-            center = filtered_fields[0]["center_latlng"]
-            fmap = folium.Map(location=[center["lat"], center["lng"]], zoom_start=15)
-
+            center_latlng = None
             for f in filtered_fields:
-                coords = [(pt["lat"], pt["lng"]) for pt in f["region_latlngs"]]
+                center_latlng = extract_center_latlng(f)
+                if center_latlng:
+                    break
+            if not center_latlng:
+                # center_latlng が無い場合は、ポリゴンの先頭点を探す
+                for f in filtered_fields:
+                    coords = extract_polygon_latlng(f)
+                    if coords:
+                        center_latlng = coords[0]
+                        break
+            center_latlng = center_latlng or (35.0, 135.0)
+            fmap = folium.Map(location=[center_latlng[0], center_latlng[1]], zoom_start=15)
+
+            skipped_empty_polygon = 0
+            for f in filtered_fields:
+                coords = extract_polygon_latlng(f)
+                if len(coords) < 3:
+                    skipped_empty_polygon += 1
+                    continue
                 display_name = f["field_name"] or f"ID: {f['id']}"
 
                 raw_color = f.get("region_color", "gray")
@@ -379,6 +429,8 @@ if st.session_state.fields:
                 ).add_to(fmap)
 
             st_folium(fmap, use_container_width=True)
+            if skipped_empty_polygon:
+                st.info(f"地図表示できない圃場（ポリゴン未取得/不正）: {skipped_empty_polygon} 件（一覧・CSVには表示されます）")
 
         with tab_list:
             st.subheader("圃場一覧")
@@ -442,14 +494,26 @@ if st.session_state.fields:
             if selected_fields:
                 st.subheader("Shapefile（ZIP）")
                 with tempfile.TemporaryDirectory() as temp_dir:
+                    exportable_fields = []
+                    skipped_export = 0
+                    for f in selected_fields:
+                        if len(extract_polygon_lnglat(f)) >= 3:
+                            exportable_fields.append(f)
+                        else:
+                            skipped_export += 1
+                    if skipped_export:
+                        st.warning(f"ポリゴン座標が無い圃場はエクスポート対象から除外しました: {skipped_export} 件")
+
                     chunk_size = 300
-                    chunks = [selected_fields[i : i + chunk_size] for i in range(0, len(selected_fields), chunk_size)]
+                    chunks = [exportable_fields[i : i + chunk_size] for i in range(0, len(exportable_fields), chunk_size)]
 
                     for idx, chunk in enumerate(chunks):
                         field_names = []
                         polygons = []
                         for f in chunk:
-                            coords = [(pt["lng"], pt["lat"]) for pt in f["region_latlngs"]]
+                            coords = extract_polygon_lnglat(f)
+                            if len(coords) < 3:
+                                continue
                             if coords and coords[0] != coords[-1]:
                                 coords.append(coords[0])
                             field_names.append(f["field_name"] or f"ID: {f['id']}")
