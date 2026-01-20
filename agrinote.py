@@ -32,6 +32,19 @@ button[role="tab"] { color: rgba(17,24,39,0.80) !important; }
 button[role="tab"][aria-selected="true"] { color: rgba(17,24,39,0.95) !important; }
 code { color: #111827; background: rgba(17,24,39,0.06); padding: 0.10rem 0.30rem; border-radius: 8px; }
 
+/* File uploader (Browse files) */
+div[data-testid="stFileUploader"] * { color: #111827 !important; }
+div[data-testid="stFileUploader"] section {
+  background: rgba(255,255,255,0.98) !important;
+  border: 1px dashed rgba(17,24,39,0.22) !important;
+  border-radius: 12px !important;
+}
+div[data-testid="stFileUploader"] button {
+  color: #111827 !important;
+  border: 1px solid rgba(17,24,39,0.12) !important;
+  background: rgba(255,255,255,0.98) !important;
+}
+
 /* ---- Typography ---- */
 html, body, [class*="css"] { font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", "Noto Sans JP", "Hiragino Sans", "Helvetica Neue", Arial; }
 h1, h2, h3 { letter-spacing: -0.02em; }
