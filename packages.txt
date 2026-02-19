@@ -3,3 +3,5 @@ chromium-driver
 wget
 curl
 unzip
+gdal-bin
+libgdal-dev
