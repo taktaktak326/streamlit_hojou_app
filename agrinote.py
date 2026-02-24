@@ -405,7 +405,14 @@ if st.session_state.fields:
     )
 
 with st.expander("データ入力", expanded=(not st.session_state.fields)):
-    st.caption("圃場一覧ページの `agri-fields` APIレスポンスJSONを貼り付け/アップロードします。")
+    st.markdown(
+        """
+圃場一覧ページの
+<span style="font-weight:700;color:#ffffff;background:#111827;padding:1px 8px;border-radius:999px;">agri-fields</span>
+APIレスポンスJSONを貼り付け/アップロードします。
+""",
+        unsafe_allow_html=True,
+    )
 
     tab1, tab2 = st.tabs(["貼り付け", "ファイル"])
 
