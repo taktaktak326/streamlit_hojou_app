@@ -1216,18 +1216,8 @@ if st.session_state.fields:
                                 "geometry": polygons,
                             }, crs="EPSG:4326")
 
-                            shp_schema = {
-                                "geometry": "Polygon",
-                                "properties": {
-                                    "FieldID": "int",
-                                    "FieldName": "str:254",
-                                    "Area_a": "float",
-                                    "Address": "str:254",
-                                    "Category": "str:254",
-                                },
-                            }
                             shp_base = os.path.join(temp_dir, f"selected_{safe_group_label}_{part_idx}")
-                            gdf.to_file(f"{shp_base}.shp", driver="ESRI Shapefile", encoding="utf-8", schema=shp_schema)
+                            gdf.to_file(f"{shp_base}.shp", driver="ESRI Shapefile", encoding="utf-8")
 
                             zip_path = os.path.join(
                                 temp_dir,
