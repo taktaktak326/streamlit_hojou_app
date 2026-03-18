@@ -11,7 +11,6 @@ from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
 import requests
 import streamlit as st
-from dotenv import load_dotenv
 
 try:
     import httpx
@@ -23,10 +22,9 @@ except ImportError:
 from openpyxl import Workbook
 from openpyxl.chart import LineChart, Reference
 
-load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), ".env"))
 
 DEFAULT_GIGYA_BASE = os.getenv("GIGYA_BASE", "https://accounts.eu1.gigya.com")
-DEFAULT_GIGYA_API_KEY = os.getenv("GIGYA_API_KEY", "")
+DEFAULT_GIGYA_API_KEY = os.getenv("GIGYA_API_KEY", "_W-AXsoj7TvX-9gi7S-IGxXfLWVkEbnGSl57M7t49GN538umaKs2EID8hyipAux2y")
 DEFAULT_TOKEN_URL = os.getenv("XARVIO_TOKEN_API_URL", "https://fm-api.xarvio.com/api/users/tokens")
 DEFAULT_GRAPHQL_URL = os.getenv("XARVIO_GRAPHQL_ENDPOINT", "https://fm-api.xarvio.com/api/graphql/data")
 REQUEST_TIMEOUT_SEC = 60
