@@ -128,8 +128,12 @@ def gigya_login(gigya_base: str, gigya_api_key: str, email: str, password: str) 
     resp.raise_for_status()
     out = resp.json()
     if (out.get("errorCode") or 0) != 0:
+        error_code = out.get("errorCode")
+        # 認証エラー（メールアドレスまたはパスワード不正）
+        if error_code in (403042, 403047, 400006):
+            raise RuntimeError("メールアドレスまたはパスワードが正しくありません。確認してください。")
         raise RuntimeError(
-            f"Gigya login failed: errorCode={out.get('errorCode')} errorMessage={out.get('errorMessage')}"
+            f"ログイン失敗: errorCode={error_code} errorMessage={out.get('errorMessage')}"
         )
 
     session_info = out.get("sessionInfo") or {}
@@ -1362,18 +1366,22 @@ html, body, [class*="css"] {
 
 /* メイン: セレクトボックス・マルチセレクトの入力エリア背景と文字 */
 [data-testid="stMain"] [data-baseweb="select"] > div:first-child {
-    background-color: #ffffff !important;
-    border-color: #b0cec8 !important;
+    background-color: #1f6b3c !important;
+    border-color: #4caf7d !important;
 }
 [data-testid="stMain"] [data-baseweb="select"] span,
 [data-testid="stMain"] [data-baseweb="select"] [class*="placeholder"],
 [data-testid="stMain"] [data-baseweb="select"] input {
-    color: #1a1a1a !important;
+    color: #ffffff !important;
 }
 /* プレースホルダー文字（"選択してください" / "No options to select." など） */
 [data-testid="stMain"] [data-baseweb="select"] [aria-disabled="true"] span,
 [data-testid="stMain"] [data-baseweb="select"] [class*="Placeholder"] {
-    color: #555555 !important;
+    color: #c0e8d8 !important;
+}
+/* セレクトボックスの矢印アイコン */
+[data-testid="stMain"] [data-baseweb="select"] svg {
+    fill: #ffffff !important;
 }
 
 /* メイン: マルチセレクトのタグ */
@@ -1394,13 +1402,13 @@ html, body, [class*="css"] {
 /* メイン: セカンダリボタン（"入力をクリア" など） */
 [data-testid="stMain"] [data-testid="stBaseButton-secondary"],
 [data-testid="stMain"] button[kind="secondary"] {
-    background-color: #ffffff !important;
+    background-color: #e8f4f1 !important;
     border: 1px solid #2e8b57 !important;
-    color: #1a1a1a !important;
+    color: #0f2f2b !important;
 }
 [data-testid="stMain"] [data-testid="stBaseButton-secondary"] p,
 [data-testid="stMain"] [data-testid="stBaseButton-secondary"] span {
-    color: #1a1a1a !important;
+    color: #0f2f2b !important;
 }
 
 /* メイン: caption */
@@ -1483,12 +1491,12 @@ html, body, [class*="css"] {
 /* サイドバー: secondaryボタン（ログアウト・処理ログ） */
 [data-testid="stSidebar"] [data-testid="stBaseButton-secondary"],
 [data-testid="stSidebar"] button[kind="secondary"] {
-    background-color: rgba(232,244,241,0.15) !important;
+    background-color: #c8e6da !important;
     border: 1px solid #4caf7d !important;
 }
 [data-testid="stSidebar"] [data-testid="stBaseButton-secondary"] p,
 [data-testid="stSidebar"] [data-testid="stBaseButton-secondary"] span {
-    color: #e8f4f1 !important;
+    color: #0f2f2b !important;
 }
 
 /* サイドバー: アラート・通知バナー内文字 */
