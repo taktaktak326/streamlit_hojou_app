@@ -1339,21 +1339,90 @@ html, body, [class*="css"]  {
       linear-gradient(180deg, #f7faf8 0%, #f4f7f5 100%);
 }
 
+/* ---- サイドバー ---- */
 [data-testid="stSidebar"] {
     background: linear-gradient(180deg, #0f2f2b 0%, #133a35 100%);
 }
 [data-testid="stSidebar"] * {
-    color: #e8f4f1;
+    color: #e8f4f1 !important;
 }
-[data-testid="stSidebar"] input, [data-testid="stSidebar"] textarea, [data-testid="stSidebar"] select {
+/* サイドバー: テキスト入力・セレクトボックス本体 */
+[data-testid="stSidebar"] input,
+[data-testid="stSidebar"] textarea,
+[data-testid="stSidebar"] select {
     color: #1a1a1a !important;
     background-color: #e8f4f1 !important;
 }
-
-[data-testid="stMetricValue"] {
-    color: #0b6158;
+/* サイドバー: セレクトボックスのドロップダウン選択エリア */
+[data-testid="stSidebar"] [data-baseweb="select"] > div,
+[data-testid="stSidebar"] [data-baseweb="select"] span {
+    color: #1a1a1a !important;
+    background-color: #e8f4f1 !important;
+}
+/* サイドバー: プレースホルダー */
+[data-testid="stSidebar"] input::placeholder,
+[data-testid="stSidebar"] textarea::placeholder {
+    color: #5a7a72 !important;
+}
+/* サイドバー: number_input の矢印ボタンエリア */
+[data-testid="stSidebar"] [data-testid="stNumberInput"] input {
+    color: #1a1a1a !important;
+    background-color: #e8f4f1 !important;
+}
+/* サイドバー: success/error/warning/info バナー内文字 */
+[data-testid="stSidebar"] [data-testid="stNotification"] *,
+[data-testid="stSidebar"] [data-testid="stAlert"] * {
+    color: #1a1a1a !important;
+}
+/* サイドバー: エクスパンダーのヘッダー */
+[data-testid="stSidebar"] [data-testid="stExpander"] summary,
+[data-testid="stSidebar"] [data-testid="stExpander"] summary * {
+    color: #e8f4f1 !important;
+}
+/* サイドバー: ボタンテキスト（primaryボタンは白文字でよい） */
+[data-testid="stSidebar"] [data-testid="stBaseButton-secondary"] p {
+    color: #0f2f2b !important;
 }
 
+/* ---- メインエリア ---- */
+/* 全体の基本文字色を濃くする */
+[data-testid="stAppViewContainer"] {
+    color: #1a1a1a;
+}
+/* 見出し・本文 */
+[data-testid="stAppViewContainer"] h1,
+[data-testid="stAppViewContainer"] h2,
+[data-testid="stAppViewContainer"] h3,
+[data-testid="stAppViewContainer"] p,
+[data-testid="stAppViewContainer"] label,
+[data-testid="stAppViewContainer"] span {
+    color: #1a1a1a;
+}
+/* caption（薄すぎる場合がある） */
+[data-testid="stAppViewContainer"] [data-testid="stCaptionContainer"] p {
+    color: #3a5a50 !important;
+}
+/* metric ラベルと差分値 */
+[data-testid="stMetricLabel"] {
+    color: #3a5a50 !important;
+}
+[data-testid="stMetricValue"] {
+    color: #0b6158 !important;
+}
+[data-testid="stMetricDelta"] {
+    color: #0b6158 !important;
+}
+/* selectbox / multiselect のプレースホルダーと選択テキスト */
+[data-testid="stAppViewContainer"] [data-baseweb="select"] span,
+[data-testid="stAppViewContainer"] [data-baseweb="select"] div {
+    color: #1a1a1a !important;
+}
+/* multiselect タグ */
+[data-testid="stAppViewContainer"] [data-baseweb="tag"] span {
+    color: #1a1a1a !important;
+}
+
+/* ---- DataFrameスタイル ---- */
 [data-testid="stDataFrame"] {
     border-radius: 12px;
     overflow: hidden;
