@@ -1330,6 +1330,7 @@ def render_ui_theme() -> None:
 
 html, body, [class*="css"]  {
     font-family: "Manrope", "Noto Sans JP", sans-serif;
+    color: #16322d;
 }
 
 [data-testid="stAppViewContainer"] {
@@ -1339,14 +1340,52 @@ html, body, [class*="css"]  {
       linear-gradient(180deg, #f7faf8 0%, #f4f7f5 100%);
 }
 
+/* ===== Sidebar ===== */
 [data-testid="stSidebar"] {
     background: linear-gradient(180deg, #0f2f2b 0%, #133a35 100%);
 }
-[data-testid="stSidebar"] * {
+
+/* サイドバーの見出し・ラベル */
+[data-testid="stSidebar"] h1,
+[data-testid="stSidebar"] h2,
+[data-testid="stSidebar"] h3,
+[data-testid="stSidebar"] label,
+[data-testid="stSidebar"] p,
+[data-testid="stSidebar"] span,
+[data-testid="stSidebar"] div {
     color: #e8f4f1;
 }
-[data-testid="stSidebar"] input, [data-testid="stSidebar"] textarea, [data-testid="stSidebar"] select {
+
+/* 入力系の箱 */
+[data-testid="stSidebar"] input,
+[data-testid="stSidebar"] textarea,
+[data-testid="stSidebar"] [data-baseweb="select"] > div,
+[data-testid="stSidebar"] [data-baseweb="base-input"] > div {
+    background-color: #f7fbfa !important;
     color: #102d28 !important;
+    border-radius: 10px !important;
+}
+
+/* input本体の文字 */
+[data-testid="stSidebar"] input::placeholder,
+[data-testid="stSidebar"] textarea::placeholder {
+    color: #5f7d77 !important;
+}
+
+/* セレクトボックスの表示文字 */
+[data-testid="stSidebar"] [data-baseweb="select"] * {
+    color: #102d28 !important;
+}
+
+/* expander header */
+[data-testid="stSidebar"] details summary,
+[data-testid="stSidebar"] details summary * {
+    color: #f2fbf8 !important;
+}
+
+/* メインエリア */
+h1, h2, h3, p, label, div {
+    color: #16322d;
 }
 
 [data-testid="stMetricValue"] {
@@ -1358,11 +1397,25 @@ html, body, [class*="css"]  {
     overflow: hidden;
     border: 1px solid rgba(19, 74, 68, 0.15);
 }
+
+/* メイン側の入力部品も明示 */
+[data-baseweb="select"] > div,
+[data-baseweb="base-input"] > div,
+textarea,
+input {
+    background-color: #ffffff;
+    color: #16322d;
+}
+
+/* ボタン文字の視認性 */
+.stButton > button {
+    color: #ffffff;
+    border-radius: 10px;
+}
 </style>
         """,
         unsafe_allow_html=True,
     )
-
 
 # ---- アプリ初期化 ----
 st.set_page_config(page_title="xarvio Data Report", layout="wide", page_icon="🌿")
