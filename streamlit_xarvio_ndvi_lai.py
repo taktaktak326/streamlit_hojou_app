@@ -1328,105 +1328,209 @@ def render_ui_theme() -> None:
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Manrope:wght@500;700;800&family=Noto+Sans+JP:wght@400;500;700&display=swap');
 
-html, body, [class*="css"]  {
+/* ================================================================
+   ベース: フォント・メイン背景
+   ================================================================ */
+html, body, [class*="css"] {
     font-family: "Manrope", "Noto Sans JP", sans-serif;
 }
 
+/* メイン背景 */
 [data-testid="stAppViewContainer"] {
     background:
-      radial-gradient(1200px 600px at 90% -20%, rgba(38, 166, 154, 0.18), transparent 60%),
-      radial-gradient(900px 500px at -10% -20%, rgba(255, 183, 77, 0.16), transparent 60%),
+      radial-gradient(1200px 600px at 90% -20%, rgba(38,166,154,0.18), transparent 60%),
+      radial-gradient(900px 500px at -10% -20%, rgba(255,183,77,0.16), transparent 60%),
       linear-gradient(180deg, #f7faf8 0%, #f4f7f5 100%);
 }
 
-/* ---- サイドバー ---- */
-[data-testid="stSidebar"] {
-    background: linear-gradient(180deg, #0f2f2b 0%, #133a35 100%);
-}
-[data-testid="stSidebar"] * {
-    color: #e8f4f1 !important;
-}
-/* サイドバー: テキスト入力・セレクトボックス本体 */
-[data-testid="stSidebar"] input,
-[data-testid="stSidebar"] textarea,
-[data-testid="stSidebar"] select {
-    color: #1a1a1a !important;
-    background-color: #e8f4f1 !important;
-}
-/* サイドバー: セレクトボックスのドロップダウン選択エリア */
-[data-testid="stSidebar"] [data-baseweb="select"] > div,
-[data-testid="stSidebar"] [data-baseweb="select"] span {
-    color: #1a1a1a !important;
-    background-color: #e8f4f1 !important;
-}
-/* サイドバー: プレースホルダー */
-[data-testid="stSidebar"] input::placeholder,
-[data-testid="stSidebar"] textarea::placeholder {
-    color: #5a7a72 !important;
-}
-/* サイドバー: number_input の矢印ボタンエリア */
-[data-testid="stSidebar"] [data-testid="stNumberInput"] input {
-    color: #1a1a1a !important;
-    background-color: #e8f4f1 !important;
-}
-/* サイドバー: success/error/warning/info バナー内文字 */
-[data-testid="stSidebar"] [data-testid="stNotification"] *,
-[data-testid="stSidebar"] [data-testid="stAlert"] * {
+/* ================================================================
+   メインエリア: 全テキストを黒系に固定
+   ================================================================ */
+[data-testid="stMain"] {
     color: #1a1a1a !important;
 }
-/* サイドバー: エクスパンダーのヘッダー */
-[data-testid="stSidebar"] [data-testid="stExpander"] summary,
-[data-testid="stSidebar"] [data-testid="stExpander"] summary * {
-    color: #e8f4f1 !important;
-}
-/* サイドバー: ボタンテキスト（primaryボタンは白文字でよい） */
-[data-testid="stSidebar"] [data-testid="stBaseButton-secondary"] p {
-    color: #0f2f2b !important;
+[data-testid="stMain"] h1,
+[data-testid="stMain"] h2,
+[data-testid="stMain"] h3,
+[data-testid="stMain"] h4,
+[data-testid="stMain"] p,
+[data-testid="stMain"] span,
+[data-testid="stMain"] label,
+[data-testid="stMain"] div {
+    color: #1a1a1a !important;
 }
 
-/* ---- メインエリア ---- */
-/* 全体の基本文字色を濃くする */
-[data-testid="stAppViewContainer"] {
-    color: #1a1a1a;
+/* メイン: セレクトボックス・マルチセレクトの入力エリア背景と文字 */
+[data-testid="stMain"] [data-baseweb="select"] > div:first-child {
+    background-color: #ffffff !important;
+    border-color: #b0cec8 !important;
 }
-/* 見出し・本文 */
-[data-testid="stAppViewContainer"] h1,
-[data-testid="stAppViewContainer"] h2,
-[data-testid="stAppViewContainer"] h3,
-[data-testid="stAppViewContainer"] p,
-[data-testid="stAppViewContainer"] label,
-[data-testid="stAppViewContainer"] span {
-    color: #1a1a1a;
+[data-testid="stMain"] [data-baseweb="select"] span,
+[data-testid="stMain"] [data-baseweb="select"] [class*="placeholder"],
+[data-testid="stMain"] [data-baseweb="select"] input {
+    color: #1a1a1a !important;
 }
-/* caption（薄すぎる場合がある） */
-[data-testid="stAppViewContainer"] [data-testid="stCaptionContainer"] p {
+/* プレースホルダー文字（"選択してください" / "No options to select." など） */
+[data-testid="stMain"] [data-baseweb="select"] [aria-disabled="true"] span,
+[data-testid="stMain"] [data-baseweb="select"] [class*="Placeholder"] {
+    color: #555555 !important;
+}
+
+/* メイン: マルチセレクトのタグ */
+[data-testid="stMain"] [data-baseweb="tag"] {
+    background-color: #d0ede5 !important;
+}
+[data-testid="stMain"] [data-baseweb="tag"] span {
+    color: #1a1a1a !important;
+}
+
+/* メイン: テキスト入力・テキストエリア */
+[data-testid="stMain"] input,
+[data-testid="stMain"] textarea {
+    color: #1a1a1a !important;
+    background-color: #ffffff !important;
+}
+
+/* メイン: セカンダリボタン（"入力をクリア" など） */
+[data-testid="stMain"] [data-testid="stBaseButton-secondary"],
+[data-testid="stMain"] button[kind="secondary"] {
+    background-color: #ffffff !important;
+    border: 1px solid #2e8b57 !important;
+    color: #1a1a1a !important;
+}
+[data-testid="stMain"] [data-testid="stBaseButton-secondary"] p,
+[data-testid="stMain"] [data-testid="stBaseButton-secondary"] span {
+    color: #1a1a1a !important;
+}
+
+/* メイン: caption */
+[data-testid="stMain"] [data-testid="stCaptionContainer"] p,
+[data-testid="stMain"] [data-testid="stCaptionContainer"] span {
     color: #3a5a50 !important;
 }
-/* metric ラベルと差分値 */
-[data-testid="stMetricLabel"] {
+
+/* メイン: metric */
+[data-testid="stMetricLabel"] p,
+[data-testid="stMetricLabel"] span {
     color: #3a5a50 !important;
 }
 [data-testid="stMetricValue"] {
     color: #0b6158 !important;
 }
-[data-testid="stMetricDelta"] {
-    color: #0b6158 !important;
-}
-/* selectbox / multiselect のプレースホルダーと選択テキスト */
-[data-testid="stAppViewContainer"] [data-baseweb="select"] span,
-[data-testid="stAppViewContainer"] [data-baseweb="select"] div {
+
+/* メイン: date_input */
+[data-testid="stMain"] [data-testid="stDateInput"] input {
     color: #1a1a1a !important;
+    background-color: #ffffff !important;
 }
-/* multiselect タグ */
-[data-testid="stAppViewContainer"] [data-baseweb="tag"] span {
+
+/* ================================================================
+   サイドバー: 濃い緑背景 → 文字はすべて明るく
+   ================================================================ */
+[data-testid="stSidebar"] {
+    background: linear-gradient(180deg, #0f2f2b 0%, #133a35 100%) !important;
+}
+
+/* サイドバー内の全テキストをデフォルト明るく */
+[data-testid="stSidebar"],
+[data-testid="stSidebar"] * {
+    color: #e8f4f1 !important;
+}
+
+/* サイドバー: タイトル・見出し */
+[data-testid="stSidebar"] h1,
+[data-testid="stSidebar"] h2,
+[data-testid="stSidebar"] h3,
+[data-testid="stSidebar"] [data-testid="stHeadingWithActionElements"] {
+    color: #e8f4f1 !important;
+}
+
+/* サイドバー: テキスト入力（メール・パスワード） */
+[data-testid="stSidebar"] input,
+[data-testid="stSidebar"] textarea {
+    color: #1a1a1a !important;
+    background-color: #e8f4f1 !important;
+    border-color: #4caf7d !important;
+}
+[data-testid="stSidebar"] input::placeholder {
+    color: #6a9a92 !important;
+}
+
+/* サイドバー: number_input */
+[data-testid="stSidebar"] [data-testid="stNumberInput"] input {
+    color: #1a1a1a !important;
+    background-color: #e8f4f1 !important;
+}
+
+/* サイドバー: エクスパンダー */
+[data-testid="stSidebar"] [data-testid="stExpander"] details summary p,
+[data-testid="stSidebar"] [data-testid="stExpander"] details summary span,
+[data-testid="stSidebar"] [data-testid="stExpander"] summary {
+    color: #e8f4f1 !important;
+}
+
+/* サイドバー: primaryボタン（接続する） */
+[data-testid="stSidebar"] [data-testid="stBaseButton-primary"],
+[data-testid="stSidebar"] button[kind="primary"] {
+    background-color: #2e8b57 !important;
+    border-color: #4caf7d !important;
+}
+[data-testid="stSidebar"] [data-testid="stBaseButton-primary"] p,
+[data-testid="stSidebar"] [data-testid="stBaseButton-primary"] span {
+    color: #ffffff !important;
+}
+
+/* サイドバー: secondaryボタン（ログアウト・処理ログ） */
+[data-testid="stSidebar"] [data-testid="stBaseButton-secondary"],
+[data-testid="stSidebar"] button[kind="secondary"] {
+    background-color: rgba(232,244,241,0.15) !important;
+    border: 1px solid #4caf7d !important;
+}
+[data-testid="stSidebar"] [data-testid="stBaseButton-secondary"] p,
+[data-testid="stSidebar"] [data-testid="stBaseButton-secondary"] span {
+    color: #e8f4f1 !important;
+}
+
+/* サイドバー: アラート・通知バナー内文字 */
+[data-testid="stSidebar"] [data-testid="stAlert"] p,
+[data-testid="stSidebar"] [data-testid="stAlert"] span,
+[data-testid="stSidebar"] [role="alert"] p,
+[data-testid="stSidebar"] [role="alert"] span {
     color: #1a1a1a !important;
 }
 
-/* ---- DataFrameスタイル ---- */
+/* サイドバー: success バナー（接続済み） */
+[data-testid="stSidebar"] [data-testid="stNotification"] p,
+[data-testid="stSidebar"] [data-testid="stNotification"] span {
+    color: #1a1a1a !important;
+}
+
+/* サイドバー: divider */
+[data-testid="stSidebar"] hr {
+    border-color: rgba(232,244,241,0.3) !important;
+}
+
+/* ================================================================
+   ドロップダウンメニュー（ポップアップ、全体共通）
+   ================================================================ */
+[data-baseweb="popover"] ul li,
+[data-baseweb="popover"] [role="option"],
+[data-baseweb="menu"] [role="option"] {
+    color: #1a1a1a !important;
+    background-color: #ffffff !important;
+}
+[data-baseweb="popover"] ul li:hover,
+[data-baseweb="popover"] [role="option"]:hover {
+    background-color: #d0ede5 !important;
+}
+
+/* ================================================================
+   DataFrameスタイル
+   ================================================================ */
 [data-testid="stDataFrame"] {
     border-radius: 12px;
     overflow: hidden;
-    border: 1px solid rgba(19, 74, 68, 0.15);
+    border: 1px solid rgba(19,74,68,0.15);
 }
 </style>
         """,
