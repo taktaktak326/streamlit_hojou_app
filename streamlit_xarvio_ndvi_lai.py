@@ -190,7 +190,7 @@ def call_xarvio_graphql(
 
 
 async def async_call_xarvio_graphql(
-    client: httpx.AsyncClient,
+    client,
     graphql_url: str,
     login_token: str,
     api_token: str,
