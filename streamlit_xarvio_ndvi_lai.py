@@ -1443,7 +1443,7 @@ with st.sidebar:
 st.markdown("## 🌿 xarvio Data Report")
 
 if not is_logged_in:
-    st.info("👈 サイドバーから xarvio アカウントに接続してください。")
+    st.markdown('<div style="background-color:#d9eaf7;border-radius:6px;padding:12px 16px;color:#000000;">👈 サイドバーから xarvio アカウントに接続してください。</div>', unsafe_allow_html=True)
     st.stop()
 
 if not st.session_state.farms:
