@@ -24,7 +24,7 @@ from openpyxl.chart import LineChart, Reference
 
 
 DEFAULT_GIGYA_BASE = os.getenv("GIGYA_BASE", "https://accounts.eu1.gigya.com")
-DEFAULT_GIGYA_API_KEY = os.getenv("GIGYA_API_KEY", "_W-AXsoj7TvX-9gi7S-IGxXfLWVkEbnGSl57M7t49GN538umaKs2EID8hyipAux2y")
+DEFAULT_GIGYA_API_KEY = os.getenv("GIGYA_API_KEY", "3_W-AXsoj7TvX-9gi7S-IGxXfLWVkEbnGSl57M7t49GN538umaKs2EID8hyipAux2y")
 DEFAULT_TOKEN_URL = os.getenv("XARVIO_TOKEN_API_URL", "https://fm-api.xarvio.com/api/users/tokens")
 DEFAULT_GRAPHQL_URL = os.getenv("XARVIO_GRAPHQL_ENDPOINT", "https://fm-api.xarvio.com/api/graphql/data")
 REQUEST_TIMEOUT_SEC = 60
@@ -1346,7 +1346,8 @@ html, body, [class*="css"]  {
     color: #e8f4f1;
 }
 [data-testid="stSidebar"] input, [data-testid="stSidebar"] textarea, [data-testid="stSidebar"] select {
-    color: #102d28 !important;
+    color: #1a1a1a !important;
+    background-color: #e8f4f1 !important;
 }
 
 [data-testid="stMetricValue"] {
@@ -1410,6 +1411,7 @@ with st.sidebar:
                     st.rerun()
                 except Exception as exc:
                     st.error(f"接続失敗: {exc}")
+                    st.caption(f"gigya_base={gigya_base} / api_key_prefix={gigya_api_key[:8] if gigya_api_key else 'EMPTY'}")
 
     if is_logged_in:
         st.success("✅ xarvio API 接続済み")
