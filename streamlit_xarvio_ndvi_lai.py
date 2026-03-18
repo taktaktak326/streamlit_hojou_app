@@ -1440,7 +1440,7 @@ with st.sidebar:
             st.code("\n".join(st.session_state.fetch_logs[-200:]))
 
 # ---- メインコンテンツ ----
-st.markdown("## 🌿 xarvio Data Report")
+st.markdown('## <span style="color:#000000;">🌿 xarvio Data Report</span>', unsafe_allow_html=True)
 
 if not is_logged_in:
     st.markdown('<div style="background-color:#d9eaf7;border-radius:6px;padding:12px 16px;color:#000000;">👈 サイドバーから xarvio アカウントに接続してください。</div>', unsafe_allow_html=True)
