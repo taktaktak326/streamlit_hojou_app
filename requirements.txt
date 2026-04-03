@@ -3,6 +3,7 @@ fiona
 folium
 geopandas
 geopy
+httpx
 lxml
 openpyxl
 pandas
